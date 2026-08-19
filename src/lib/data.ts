@@ -17,10 +17,63 @@ export interface ClientApp {
   createdAt: string;
   requests: number;
   users: number;
+  aiConfig?: AIClientConfig;
+  allowedOrigins?: string;
+  rateLimitPerMin?: number;
+  webhookUrl?: string;
 }
+
+/* ---------------- auth / session / system (admin plane) ---------------- */
+export type Theme = 'dark' | 'light';
+
+export interface AIClientConfig {
+  provider: ProviderId;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  systemPrompt: string;
+}
+export const DEFAULT_AI_CONFIG: AIClientConfig = {
+  provider: 'openai', model: 'gpt-4o-mini', temperature: 0.4, maxTokens: 1024, systemPrompt: '',
+};
+
+export interface AdminAccount {
+  username: string;
+  email: string;
+  passHash: string;      // demo digest — real backend uses bcrypt
+  createdAt: string;
+}
+
+export interface Session {
+  accessToken: string;
+  refreshToken: string;
+  issuedAt: number;
+  expiresAt: number;
+  refreshExpiresAt: number;
+}
+
+export interface SystemConfig {
+  gatewayUrl: string;
+  localPort: number;
+  sessionTimeoutMin: number;
+  refreshValidDays: number;
+  globalRatePerMin: number;
+  enforceClientScope: boolean;
+  autoRefreshSession: boolean;
+}
+export const DEFAULT_SYSTEM: SystemConfig = {
+  gatewayUrl: 'wss://api.highlyagent.io/ws',
+  localPort: 8090,
+  sessionTimeoutMin: 30,
+  refreshValidDays: 7,
+  globalRatePerMin: 60,
+  enforceClientScope: true,
+  autoRefreshSession: true,
+};
 
 export interface KnowledgeEntry {
   id: string;
+  clientId?: string;
   question: string;
   answer: string;
   category: string;
@@ -124,6 +177,10 @@ export interface AppState {
   security: SecuritySettings;
   roles: RolePerm[];
   systemInstruction: string;
+  admin: AdminAccount | null;
+  session: Session | null;
+  theme: Theme;
+  system: SystemConfig;
 }
 
 /* ---------------- utilities ---------------- */
@@ -327,6 +384,10 @@ export function seedState(): AppState {
     ],
     systemInstruction:
       'You are the embedded assistant for this client application. Answer concisely in the language the user writes (Bengali or English). When a tool result is provided, ground the answer strictly in that data. Never invent prices, order states or dates.',
+    admin: null,
+    session: null,
+    theme: 'dark',
+    system: { ...DEFAULT_SYSTEM },
   };
 }
 

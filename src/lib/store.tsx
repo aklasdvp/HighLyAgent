@@ -2,9 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { ReactNode } from 'react';
 import type {
   AppState, AuditEntry, ClientApp, ClientType, KnowledgeEntry, LogEntry, LogLevel,
-  ProviderCfg, Tool, UserRec, Plan, SecuritySettings,
+  ProviderCfg, Tool, Plan, SecuritySettings, Session, SystemConfig, Theme,
 } from './data';
-import { LOG_POOL, genKey, nowIso, seedState, uid } from './data';
+import { DEFAULT_SYSTEM, LOG_POOL, genKey, nowIso, seedState, uid } from './data';
 
 const STORAGE_KEY = 'hla_state_v1';
 
@@ -12,8 +12,20 @@ function load(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as AppState;
-      if (Array.isArray(parsed.clients) && Array.isArray(parsed.knowledge) && parsed.metrics) return parsed;
+      const parsed = JSON.parse(raw) as Partial<AppState>;
+      if (Array.isArray(parsed.clients) && Array.isArray(parsed.knowledge) && parsed.metrics) {
+        const base = {
+          ...seedState(),
+          ...parsed,
+          system: { ...DEFAULT_SYSTEM, ...(parsed.system ?? {}) },
+        } as AppState;
+        /* scope legacy/seed knowledge entries across projects */
+        const cids = base.clients.map((c) => c.id);
+        if (cids.length) {
+          base.knowledge = base.knowledge.map((k, i) => (k.clientId ? k : { ...k, clientId: cids[i % cids.length] }));
+        }
+        return base;
+      }
     }
   } catch { /* corrupted → reseed */ }
   return seedState();
@@ -25,7 +37,23 @@ const log = (level: LogLevel, source: string, message: string): LogEntry =>
 const audit = (actor: string, action: string, detail: string): AuditEntry =>
   ({ id: uid(), ts: nowIso(), actor, action, detail, ip: actor === 'system' ? 'internal' : '103.204.88.12' });
 
-const ADMIN = 'admin@highlyagent';
+/* demo credential digest — the real backend uses bcrypt (see backend/app/core.py) */
+export const digest = (s: string) => {
+  try { return btoa(unescape(encodeURIComponent(`hla::${s}::salt`))); } catch { return 'x'; }
+};
+
+const b64 = (o: object) => { try { return btoa(JSON.stringify(o)); } catch { return 'token'; } };
+
+function makeSession(timeoutMin: number, refreshDays: number): Session {
+  const now = Date.now();
+  return {
+    accessToken: b64({ sub: 'admin', role: 'admin', type: 'access', iat: now, exp: now + timeoutMin * 60_000 }),
+    refreshToken: b64({ sub: 'admin', role: 'admin', type: 'refresh', iat: now, exp: now + refreshDays * 86_400_000 }),
+    issuedAt: now,
+    expiresAt: now + timeoutMin * 60_000,
+    refreshExpiresAt: now + refreshDays * 86_400_000,
+  };
+}
 
 export interface QueryRecord {
   hit: boolean;
@@ -35,19 +63,91 @@ export interface QueryRecord {
   latency: number;
 }
 
-function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
+type Get = () => AppState;
+
+function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>, get: Get) {
   return {
+    /* ---------- auth (admin plane — JWT, no API key) ---------- */
+    setupAdmin(username: string, email: string, password: string) {
+      const s = get();
+      if (s.admin) return false;
+      const admin = { username: username.trim(), email: email.trim(), passHash: digest(password), createdAt: nowIso() };
+      set((st) => ({
+        ...st,
+        admin,
+        session: makeSession(st.system.sessionTimeoutMin, st.system.refreshValidDays),
+        audit: [audit(username, 'ADMIN_SETUP', 'initial admin created manually — no auto-configuration'), ...st.audit],
+        logs: [log('info', 'auth', `admin "${username}" created — JWT pair issued`), ...st.logs].slice(0, 160),
+      }));
+      return true;
+    },
+    login(identifier: string, password: string): boolean {
+      const s = get();
+      const a = s.admin;
+      if (!a) return false;
+      const idn = identifier.trim().toLowerCase();
+      const okId = a.username.toLowerCase() === idn || a.email.toLowerCase() === idn;
+      if (!okId || a.passHash !== digest(password)) {
+        set((st) => ({ ...st, audit: [audit(idn || 'unknown', 'LOGIN_FAILED', 'invalid credentials — attempt logged'), ...st.audit], logs: [log('warn', 'auth', `failed login attempt for "${identifier.trim()}"`), ...st.logs].slice(0, 160) }));
+        return false;
+      }
+      set((st) => ({
+        ...st,
+        session: makeSession(st.system.sessionTimeoutMin, st.system.refreshValidDays),
+        audit: [audit(a.username, 'LOGIN', `JWT issued — access ${st.system.sessionTimeoutMin}m / refresh ${st.system.refreshValidDays}d`), ...st.audit],
+        logs: [log('info', 'auth', 'admin login ok — JWT pair issued'), ...st.logs].slice(0, 160),
+      }));
+      return true;
+    },
+    logout() {
+      set((st) => ({
+        ...st,
+        session: null,
+        audit: [audit(st.admin?.username ?? 'admin', 'LOGOUT', 'refresh token revoked'), ...st.audit],
+        logs: [log('info', 'auth', 'admin logged out — session destroyed'), ...st.logs].slice(0, 160),
+      }));
+    },
+    refreshSession(): boolean {
+      const s = get();
+      if (!s.session || Date.now() > s.session.refreshExpiresAt) {
+        set((st) => ({ ...st, session: null, logs: [log('warn', 'auth', 'refresh token expired — re-login required'), ...st.logs].slice(0, 160) }));
+        return false;
+      }
+      set((st) => ({
+        ...st,
+        session: makeSession(st.system.sessionTimeoutMin, st.system.refreshValidDays),
+        logs: [log('info', 'auth', 'session refreshed via refresh token (rotation)'), ...st.logs].slice(0, 160),
+      }));
+      return true;
+    },
+
+    /* ---------- theme & system ---------- */
+    setTheme(theme: Theme) {
+      set((s) => ({ ...s, theme }));
+    },
+    saveSystem(patch: Partial<SystemConfig>) {
+      set((s) => ({
+        ...s,
+        system: { ...s.system, ...patch },
+        audit: [audit(s.admin?.username ?? 'admin', 'SYSTEM_UPDATE', 'system settings saved manually'), ...s.audit],
+        logs: [log('info', 'admin', 'system settings updated'), ...s.logs].slice(0, 160),
+      }));
+    },
+
     /* ---------- clients ---------- */
     addClient(data: { name: string; type: ClientType; env: string; desc: string }): ClientApp {
       const client: ClientApp = {
         id: uid(), ...data, apiKey: genKey(), status: 'active',
         createdAt: nowIso(), requests: 0, users: 0,
+        rateLimitPerMin: get().system.globalRatePerMin,
+        allowedOrigins: '',
+        webhookUrl: '',
       };
       set((s) => ({
         ...s,
         clients: [client, ...s.clients],
-        audit: [audit(ADMIN, 'CLIENT_CREATE', `${client.name} (${client.type}) — key issued`, ), ...s.audit],
-        logs: [log('info', 'admin', `client registered: ${client.name} [${client.env}]`), ...s.logs].slice(0, 160),
+        audit: [audit(s.admin?.username ?? 'admin', 'CLIENT_CREATE', `${client.name} (${client.type}) — key issued`), ...s.audit],
+        logs: [log('info', 'admin', `project registered: ${client.name} [${client.env}]`), ...s.logs].slice(0, 160),
       }));
       return client;
     },
@@ -60,8 +160,10 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
         return {
           ...s,
           clients: s.clients.filter((x) => x.id !== id),
-          audit: [audit(ADMIN, 'CLIENT_DELETE', `${c?.name ?? id} — key revoked, data queued for purge`), ...s.audit],
-          logs: [log('warn', 'admin', `client deleted: ${c?.name ?? id}`), ...s.logs].slice(0, 160),
+          knowledge: s.knowledge.filter((k) => (k as KnowledgeEntry & { clientId?: string }).clientId !== id),
+          users: s.users.filter((u) => u.clientId !== id),
+          audit: [audit(s.admin?.username ?? 'admin', 'CLIENT_DELETE', `${c?.name ?? id} — key revoked, data queued for purge`), ...s.audit],
+          logs: [log('warn', 'admin', `project deleted: ${c?.name ?? id}`), ...s.logs].slice(0, 160),
         };
       });
     },
@@ -72,7 +174,7 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
         return {
           ...s,
           clients: s.clients.map((x) => (x.id === id ? { ...x, apiKey: key } : x)),
-          audit: [audit(ADMIN, 'API_KEY_REGENERATE', `client=${c?.name ?? id} — previous key revoked instantly`), ...s.audit],
+          audit: [audit(s.admin?.username ?? 'admin', 'API_KEY_REGENERATE', `project=${c?.name ?? id} — previous key revoked instantly`), ...s.audit],
           logs: [log('warn', 'auth', `API key rotated for ${c?.name ?? id} — old key invalid`), ...s.logs].slice(0, 160),
         };
       });
@@ -80,12 +182,12 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
     },
 
     /* ---------- knowledge ---------- */
-    addKnowledge(e: Omit<KnowledgeEntry, 'id' | 'createdAt' | 'updatedAt' | 'hits' | 'savedTokens'>) {
+    addKnowledge(e: Omit<KnowledgeEntry, 'id' | 'createdAt' | 'updatedAt' | 'hits' | 'savedTokens'> & { clientId?: string }) {
       const entry: KnowledgeEntry = { ...e, id: uid(), hits: 0, savedTokens: 0, createdAt: nowIso(), updatedAt: nowIso() };
       set((s) => ({
         ...s,
         knowledge: [entry, ...s.knowledge],
-        logs: [log('info', 'knowledge', `manual entry added: "${entry.question.slice(0, 48)}"`), ...s.logs].slice(0, 160),
+        logs: [log('info', 'knowledge', `training rule added: "${entry.question.slice(0, 48)}"`), ...s.logs].slice(0, 160),
       }));
     },
     updateKnowledge(id: string, patch: Partial<KnowledgeEntry>) {
@@ -114,7 +216,7 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
       set((s) => ({
         ...s,
         tools: [tool, ...s.tools],
-        audit: [audit(ADMIN, 'TOOL_REGISTER', `${tool.name} (${tool.type}) schema validated`), ...s.audit],
+        audit: [audit(s.admin?.username ?? 'admin', 'TOOL_REGISTER', `${tool.name} (${tool.type}) schema validated`), ...s.audit],
         logs: [log('info', 'tool', `registered ${tool.name} — schema valid, ready`), ...s.logs].slice(0, 160),
       }));
     },
@@ -130,7 +232,7 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
       set((s) => ({
         ...s,
         providers: s.providers.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-        audit: [audit(ADMIN, 'PROVIDER_UPDATE', `${id} configuration saved manually`), ...s.audit],
+        audit: [audit(s.admin?.username ?? 'admin', 'PROVIDER_UPDATE', `${id} configuration saved manually`), ...s.audit],
         logs: [log('info', `provider.${id}`, 'configuration applied (manual save)'), ...s.logs].slice(0, 160),
       }));
     },
@@ -157,11 +259,18 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
       set((s) => ({
         ...s,
         systemInstruction: text,
-        audit: [audit(ADMIN, 'SYSTEM_INSTRUCTION', 'global system instruction updated'), ...s.audit],
+        audit: [audit(s.admin?.username ?? 'admin', 'SYSTEM_INSTRUCTION', 'global system instruction updated'), ...s.audit],
       }));
     },
 
     /* ---------- users ---------- */
+    addUser(u: { name: string; email: string; clientId: string; plan: Plan }) {
+      set((s) => ({
+        ...s,
+        users: [...s.users, { id: uid(), ...u, dailyUsed: 0, monthlyUsed: 0, status: 'active' as const }],
+        logs: [log('info', 'billing', `user added to project (${u.plan} plan)`), ...s.logs].slice(0, 160),
+      }));
+    },
     setPlan(id: string, plan: Plan) {
       set((s) => ({
         ...s,
@@ -194,7 +303,7 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
       set((s) => ({
         ...s,
         security: { ...s.security, ...patch },
-        audit: [audit(ADMIN, 'SECURITY_UPDATE', 'security policy saved manually'), ...s.audit],
+        audit: [audit(s.admin?.username ?? 'admin', 'SECURITY_UPDATE', 'security policy saved manually'), ...s.audit],
       }));
     },
     toggleRole(role: string, perm: string) {
@@ -203,7 +312,7 @@ function makeActions(set: React.Dispatch<React.SetStateAction<AppState>>) {
         roles: s.roles.map((r) =>
           r.role === role ? { ...r, perms: { ...r.perms, [perm]: !r.perms[perm] } } : r,
         ),
-        audit: [audit(ADMIN, 'RBAC_CHANGE', `${role} / ${perm} toggled`), ...s.audit],
+        audit: [audit(s.admin?.username ?? 'admin', 'RBAC_CHANGE', `${role} / ${perm} toggled`), ...s.audit],
       }));
     },
 
@@ -255,9 +364,9 @@ const Ctx = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(load);
-  const actions = useMemo(() => makeActions(setState), []);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const actions = useMemo(() => makeActions(setState, () => stateRef.current), []);
 
   /* persistence */
   useEffect(() => {
@@ -300,10 +409,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={{ state, actions }}>{children}</Ctx.Provider>;
 }
 
-export function useStore(): Store {
+export function useStore() {
   const ctx = useContext(Ctx);
-  if (!ctx) throw new Error('useStore outside StoreProvider');
+  if (!ctx) throw new Error('useStore outside provider');
   return ctx;
 }
-
-export type { UserRec };

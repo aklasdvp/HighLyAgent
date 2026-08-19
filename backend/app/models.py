@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
@@ -155,3 +155,27 @@ class AuditLog(Base):
     message: Mapped[str] = mapped_column(Text)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class AdminUser(Base):
+    """Dashboard login — created manually via /auth/setup on first boot. Never auto-provisioned."""
+    __tablename__ = "admin_users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    username: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(120))                    # bcrypt
+    role: Mapped[str] = mapped_column(String(20), default="admin")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class SessionRow(Base):
+    """Refresh-token registry — rotation on every refresh, revocation on logout."""
+    __tablename__ = "sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    admin_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), index=True)
+    refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)         # SHA-256, raw never stored
+    expires_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow() + timedelta(days=7))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode, CSSProperties } from 'react';
 import {
   LayoutGrid, Layers, KeyRound, BookOpenText, Wrench, PlugZap, TerminalSquare, Users,
@@ -6,6 +6,7 @@ import {
   Pencil, AlertTriangle, Globe2, Smartphone, Monitor, Cpu, Send, Square, ChevronUp,
   ChevronDown, ChevronRight, Clock3, Database, Activity, SlidersHorizontal, Zap, Eye,
   EyeOff, Pause, Play, Lock, Server, Sparkles, Info, Wifi, ArrowRight, DollarSign,
+  Sun, Moon, LogOut, FolderKanban, HelpCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -19,7 +20,8 @@ export const ICONS = {
   down: ChevronDown, right: ChevronRight, clock: Clock3, db: Database, pulse: Activity,
   sliders: SlidersHorizontal, bolt: Zap, eye: Eye, eyeoff: EyeOff, pause: Pause,
   play: Play, lock: Lock, server: Server, spark: Sparkles, info: Info, wifi: Wifi,
-  arrow: ArrowRight, dollar: DollarSign,
+  arrow: ArrowRight, dollar: DollarSign, sun: Sun, moon: Moon, logout: LogOut,
+  folder: FolderKanban, help: HelpCircle,
 } as const;
 export type IconName = keyof typeof ICONS;
 
@@ -35,9 +37,9 @@ export const CLIENT_ICONS: Record<string, IconName> = {
 };
 
 /* ---------------- buttons ---------------- */
-export function Btn({ children, onClick, variant = 'ghost', size = 'md', disabled, className = '', title }: {
+export function Btn({ children, onClick, variant = 'ghost', size = 'md', disabled, className = '', title, type = 'button' }: {
   children: ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost' | 'danger' | 'subtle' | 'pulse';
-  size?: 'sm' | 'md'; disabled?: boolean; className?: string; title?: string;
+  size?: 'sm' | 'md'; disabled?: boolean; className?: string; title?: string; type?: 'button' | 'submit';
 }) {
   const base = 'inline-flex items-center justify-center gap-1.5 font-medium rounded-lg transition-all duration-150 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none whitespace-nowrap';
   const sizes = { sm: 'text-xs px-2.5 py-1.5', md: 'text-[13px] px-3.5 py-2' };
@@ -49,7 +51,7 @@ export function Btn({ children, onClick, variant = 'ghost', size = 'md', disable
     subtle: 'text-mist-400 hover:text-mist-100 hover:bg-ink-750',
   };
   return (
-    <button title={title} disabled={disabled} onClick={onClick} className={`${base} ${sizes[size]} ${variants[variant]} ${className}`}>
+    <button type={type} title={title} disabled={disabled} onClick={onClick} className={`${base} ${sizes[size]} ${variants[variant]} ${className}`}>
       {children}
     </button>
   );
@@ -104,16 +106,16 @@ export function Toggle({ on, onChange, disabled }: { on: boolean; onChange: () =
       aria-checked={on}
       disabled={disabled}
       onClick={onChange}
-      className={`relative w-9 h-5 rounded-full transition-colors duration-200 disabled:opacity-40 ${on ? 'bg-pulse-500' : 'bg-ink-600'}`}
+      className={`relative w-9 h-5 rounded-full transition-colors duration-200 disabled:opacity-40 shrink-0 ${on ? 'bg-pulse-500' : 'bg-ink-600'}`}
     >
       <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-ink-950 transition-transform duration-200 ${on ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
     </button>
   );
 }
 
-/* ---------------- modal ---------------- */
-export function Modal({ open, onClose, title, children, width = 480 }: {
-  open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; width?: number;
+/* ---------------- modal (scrollable body + sticky bottom footer) ---------------- */
+export function Modal({ open, onClose, title, children, footer, width = 480 }: {
+  open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode; width?: number;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -124,16 +126,70 @@ export function Modal({ open, onClose, title, children, width = 480 }: {
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="anim-pop relative panel rounded-xl!" style={{ width, maxWidth: '100%', boxShadow: 'var(--shadow-pop)' }}>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-ink-700">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
+      <div className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm anim-fade" onClick={onClose} />
+      <div
+        className="anim-pop relative panel rounded-t-xl! sm:rounded-xl! w-full flex flex-col max-h-[88vh] sm:max-h-[80vh]"
+        style={{ width, maxWidth: '100%', boxShadow: 'var(--shadow-pop)' }}
+      >
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-ink-700 shrink-0">
           <h3 className="font-display font-semibold text-[15px] text-mist-100">{title}</h3>
           <IconBtn icon="x" onClick={onClose} title="Close" />
         </div>
-        <div className="p-5 max-h-[78vh] overflow-y-auto feed-scroll">{children}</div>
+        <div className="p-5 overflow-y-auto feed-scroll grow">{children}</div>
+        {footer && (
+          <div className="px-5 py-3.5 border-t border-ink-700 flex items-center justify-end gap-2 shrink-0 bg-ink-800/60 rounded-b-xl!">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+/* ---------------- confirm dialog ---------------- */
+export interface ConfirmOpts {
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  tone?: 'danger' | 'primary';
+}
+const ConfirmCtx = createContext<(o: ConfirmOpts) => Promise<boolean>>(() => Promise.resolve(false));
+export const useConfirm = () => useContext(ConfirmCtx);
+
+export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const [req, setReq] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
+  const confirm = useCallback(
+    (o: ConfirmOpts) => new Promise<boolean>((resolve) => setReq({ ...o, resolve })),
+    [],
+  );
+  const close = (v: boolean) => { req?.resolve(v); setReq(null); };
+  return (
+    <ConfirmCtx.Provider value={confirm}>
+      {children}
+      {req && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm anim-fade" onClick={() => close(false)} />
+          <div className="anim-pop relative panel p-5 w-[420px] max-w-full" style={{ boxShadow: 'var(--shadow-pop)' }}>
+            <div className="flex items-start gap-3">
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${req.tone === 'danger' ? 'bg-alarm-900 text-alarm-400' : 'bg-pulse-900 text-pulse-300'}`}>
+                <Icon name={req.tone === 'danger' ? 'alert' : 'info'} size={18} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-display font-semibold text-[15px] text-mist-100">{req.title}</h3>
+                <div className="text-[12.5px] text-mist-400 mt-1 leading-relaxed">{req.message}</div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <Btn onClick={() => close(false)}>Cancel</Btn>
+              <Btn variant={req.tone === 'danger' ? 'danger' : 'primary'} onClick={() => close(true)}>
+                {req.confirmLabel ?? 'Confirm'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </ConfirmCtx.Provider>
   );
 }
 
@@ -144,6 +200,90 @@ export function Field({ label, children, hint }: { label: string; children: Reac
       <label className="field-label">{label}</label>
       {children}
       {hint && <p className="mt-1.5 text-[11px] text-mist-500">{hint}</p>}
+    </div>
+  );
+}
+
+/* ---------------- breadcrumb ---------------- */
+export function Breadcrumb({ items }: { items: { label: string; onClick?: () => void }[] }) {
+  return (
+    <nav className="flex items-center gap-1.5 text-[12.5px] min-w-0 overflow-hidden">
+      {items.map((it, i) => (
+        <span key={i} className="flex items-center gap-1.5 min-w-0">
+          {i > 0 && <Icon name="right" size={12} className="text-mist-600 shrink-0" />}
+          {it.onClick ? (
+            <button onClick={it.onClick} className="text-mist-400 hover:text-pulse-300 transition-colors truncate">
+              {it.label}
+            </button>
+          ) : (
+            <span className="text-mist-200 font-medium truncate">{it.label}</span>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+/* ---------------- tabs (project sub-navigation) ---------------- */
+export function Tabs({ tabs, active, onChange }: {
+  tabs: { id: string; label: string; icon?: IconName }[]; active: string; onChange: (id: string) => void;
+}) {
+  return (
+    <div className="flex gap-1 overflow-x-auto feed-scroll border-b border-ink-700 -mx-1 px-1">
+      {tabs.map((t) => {
+        const on = t.id === active;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            className={`relative flex items-center gap-1.5 px-3.5 py-2.5 text-[13px] whitespace-nowrap transition-colors ${
+              on ? 'text-mist-100 font-medium' : 'text-mist-500 hover:text-mist-300'
+            }`}
+          >
+            {t.icon && <Icon name={t.icon} size={14} className={on ? 'text-signal-400' : ''} />}
+            {t.label}
+            <span className={`absolute left-2 right-2 -bottom-px h-[2px] rounded-full transition-all duration-200 ${on ? 'bg-signal-400' : 'bg-transparent'}`} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------- skeleton / error ---------------- */
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`skeleton ${className}`} />;
+}
+
+export function PageSkeleton() {
+  return (
+    <div className="anim-fade">
+      <Skeleton className="h-7 w-56 mb-2" />
+      <Skeleton className="h-4 w-80 mb-6" />
+      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[104px]" />)}
+      </div>
+      <div className="grid lg:grid-cols-3 gap-3">
+        <Skeleton className="h-64 lg:col-span-2" />
+        <Skeleton className="h-64" />
+      </div>
+    </div>
+  );
+}
+
+export function ErrorState({ title, desc, actionLabel, onAction }: {
+  title: string; desc: string; actionLabel?: string; onAction?: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-14 text-center anim-fade">
+      <div className="w-12 h-12 rounded-xl bg-alarm-900 border border-alarm-500/40 flex items-center justify-center text-alarm-400 mb-3">
+        <Icon name="alert" size={22} />
+      </div>
+      <p className="font-display font-semibold text-mist-200">{title}</p>
+      <p className="text-xs text-mist-500 mt-1 max-w-sm">{desc}</p>
+      {actionLabel && onAction && (
+        <Btn variant="danger" className="mt-4" onClick={onAction}>{actionLabel}</Btn>
+      )}
     </div>
   );
 }
@@ -245,15 +385,15 @@ export function Stat({ label, value, sub, icon, spark, color, delay = 0 }: {
   return (
     <div className="panel p-4 anim-rise group hover:border-ink-500 transition-colors" style={{ animationDelay: `${delay}ms` } as CSSProperties}>
       <div className="flex items-start justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-mist-500 flex items-center gap-1.5">
             <span style={{ color }}><Icon name={icon} size={12} /></span>
             {label}
           </p>
-          <p className="font-display font-bold text-[26px] leading-tight text-mist-100 mt-1.5 tabular-nums">{value}</p>
+          <p className="font-display font-bold text-[26px] leading-tight text-mist-100 mt-1.5 tabular-nums truncate">{value}</p>
           {sub && <div className="text-[11.5px] text-mist-400 mt-1">{sub}</div>}
         </div>
-        {spark && <div className="mt-1 opacity-80 group-hover:opacity-100 transition-opacity">{spark}</div>}
+        {spark && <div className="mt-1 opacity-80 group-hover:opacity-100 transition-opacity shrink-0">{spark}</div>}
       </div>
     </div>
   );
@@ -272,14 +412,15 @@ export function SectionHead({ title, desc, right }: { title: string; desc?: stri
   );
 }
 
-export function EmptyState({ icon, title, desc }: { icon: IconName; title: string; desc: string }) {
+export function EmptyState({ icon, title, desc, action }: { icon: IconName; title: string; desc: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center py-14 text-center">
+    <div className="flex flex-col items-center justify-center py-14 text-center anim-fade">
       <div className="w-12 h-12 rounded-xl bg-ink-750 border border-ink-600 flex items-center justify-center text-mist-500 mb-3">
         <Icon name={icon} size={22} />
       </div>
       <p className="font-display font-semibold text-mist-200">{title}</p>
       <p className="text-xs text-mist-500 mt-1 max-w-xs">{desc}</p>
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }
@@ -304,7 +445,7 @@ const FEED_POOL: { kind: string; weight: number; make: () => string }[] = [
   { kind: 'tool', weight: 11, make: () => `TOOL ${pick(['weather.fetch', 'math.calculate', 'currency.convert', 'orders.lookup', 'device.reboot'])} · ${40 + Math.floor(Math.random() * 260)}ms` },
   { kind: 'conn', weight: 9, make: () => `${Math.random() > 0.45 ? '+ CONN' : '− CLOSE'} ${pick(['nova-pos-web', 'nova-pos-mobile', 'shopio-desktop', 'farm-iot-hub', 'medibook-app'])} · ${pick(['api-key', 'jwt'])}` },
   { kind: 'hb', weight: 13, make: () => `heartbeat · ${118 + Math.floor(Math.random() * 30)} sockets · rtt ${14 + Math.floor(Math.random() * 26)}ms` },
-  { kind: 'err', weight: 2, make: () => pick(['RATE LIMIT 429 · backoff 2s', 'provider timeout · failover → claude', 'schema invalid · tool blocked', 'token quota hit · user u_1947']), },
+  { kind: 'err', weight: 2, make: () => pick(['RATE LIMIT 429 · backoff 2s', 'provider timeout · failover → claude', 'schema invalid · tool blocked', 'token quota hit · user u_1947', 'ACCESS_DENIED · key/project mismatch']), },
 ];
 
 function weightedFrame(): { kind: string; text: string } {

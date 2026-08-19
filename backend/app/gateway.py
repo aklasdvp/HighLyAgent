@@ -90,9 +90,16 @@ async def _authenticate(token: str | None) -> tuple[uuid.UUID | None, str]:
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket, token: str | None = None):
+async def websocket_endpoint(ws: WebSocket, token: str | None = None, client_id: str | None = None):
+    """Real-time gateway. Client apps must present BOTH ?client_id= and ?token= (API key);
+    a key bound to a different project is rejected with close code 4403 (ACCESS_DENIED)."""
     await ws.accept()
-    client_id, auth_kind = await _authenticate(token)
+    key_client, auth_kind = await _authenticate(token)
+    if auth_kind == "api-key" and client_id is not None and str(key_client) != client_id:
+        log.warning("ws ACCESS_DENIED key-project mismatch client=%s", client_id)
+        await ws.close(code=4403, reason="ACCESS_DENIED: client_id does not match API key")
+        return
+    client_id = uuid.UUID(client_id) if client_id else key_client
     conn_id = str(uuid.uuid4())
     manager.register(conn_id, ws, client_id)
     log.info("ws connect conn=%s auth=%s client=%s", conn_id, auth_kind, client_id)
