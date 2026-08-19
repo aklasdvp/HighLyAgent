@@ -1,0 +1,76 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - run: pip install -r backend/requirements.txt ruff mypy
+      - run: ruff check backend/app
+      - run: mypy backend/app --ignore-missing-imports
+
+  test:
+    runs-on: ubuntu-latest
+    needs: quality
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: highlyagent_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U test" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/highlyagent_test
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET_KEY: ci-test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - run: pip install -r backend/requirements.txt
+      - run: pytest backend/tests -q --cov=backend/app --cov-fail-under=90
+
+  build-push:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/highlyagent/api:${{ github.sha }}
+            ghcr.io/highlyagent/api:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-push
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - run: |
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/kubeconfig
+          kubectl --kubeconfig=$HOME/kubeconfig -n highlyagent set image \
+            deployment/api api=ghcr.io/highlyagent/api:${{ github.sha }}
+          kubectl --kubeconfig=$HOME/kubeconfig -n highlyagent rollout status deployment/api --timeout=180s
