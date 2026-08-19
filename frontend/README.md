@@ -14,7 +14,7 @@ real-time WebSocket gateway — that runs on your VPS via Docker Compose.
 └──────────────────────────┘                           └──────────────────────────┘
 ```
 
-> দুইটি আলাদা repository — কিন্তু একই API contract (`/api/v1/*`, `/ws`)।
+> দুইটি আলাদা repository — কিন্তু একই API contract (`/auth/*`, `/projects`, `/agent/process`, `/ws`)।
 > Admin dashboard লগইন করে **JWT** দিয়ে; ক্লায়েন্ট অ্যাপ কল করে **X-Client-Id + X-API-Key** দিয়ে।
 
 ---
@@ -62,8 +62,9 @@ All connection settings live in **`.env`** (build-time) — no code changes need
 
 | Variable | Example | Purpose |
 |---|---|---|
-| `VITE_API_URL` | `https://api.your-vps.com` | REST API base (`/api/v1/*`, `/health`) |
+| `VITE_API_URL` | `https://api.your-vps.com` | REST API base (`/auth/*`, `/projects`, `/agent/process`, `/health`) |
 | `VITE_WS_URL` | `wss://api.your-vps.com/ws` | Real-time WebSocket gateway |
+| `VITE_API_PREFIX` | *(empty)* | REST route prefix. The backend serves endpoints at the root now — leave empty. Set only if you re-introduce `/api/v1`. |
 | `VITE_SIMULATED` | `true` / `false` | `true` = built-in demo data store (no backend needed) · `false` = real API calls |
 
 ```bash

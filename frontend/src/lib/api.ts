@@ -33,6 +33,12 @@ const env = import.meta.env as Record<string, string | undefined>;
 export const API_URL: string =
   (read('hla.api') || env.VITE_API_URL || 'https://api.highlyagent.io').replace(/\/+$/, '');
 
+/** Route prefix in front of every REST path. The backend dropped the /api/v1
+ *  prefix (see backend commits "remove API version prefix"), so the default is
+ *  empty — endpoints live at the root: /auth/login, /projects, /agent/process…
+ *  Set VITE_API_PREFIX=/api/v1 if you ever restore a versioned prefix. */
+export const API_PREFIX: string = (read('hla.prefix') || env.VITE_API_PREFIX || '').replace(/\/+$/, '');
+
 export const WS_URL: string =
   read('hla.ws') || env.VITE_WS_URL || `${API_URL.replace(/^http/, 'ws')}/ws`;
 
@@ -79,24 +85,24 @@ export const api = {
 
   /* ── auth plane (admin JWT — no API key needed) ── */
   setup: (username: string, email: string, password: string) =>
-    http<TokenPair>('/api/v1/auth/setup', { method: 'POST', body: JSON.stringify({ username, email, password }) }),
+    http<TokenPair>(`${API_PREFIX}/auth/setup`, { method: 'POST', body: JSON.stringify({ username, email, password }) }),
   login: (identifier: string, password: string) =>
-    http<TokenPair>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }) }),
+    http<TokenPair>(`${API_PREFIX}/auth/login`, { method: 'POST', body: JSON.stringify({ identifier, password }) }),
   refresh: (refresh_token: string) =>
-    http<TokenPair>('/api/v1/auth/refresh', { method: 'POST', body: JSON.stringify({ refresh_token }) }),
+    http<TokenPair>(`${API_PREFIX}/auth/refresh`, { method: 'POST', body: JSON.stringify({ refresh_token }) }),
   me: (token: string) =>
-    http<{ sub: string; role: string }>('/api/v1/auth/me', { headers: bearer(token) }),
+    http<{ sub: string; role: string }>(`${API_PREFIX}/auth/me`, { headers: bearer(token) }),
 
   /* ── admin plane ── */
   projects: (token: string) =>
-    http<unknown[]>('/api/v1/projects', { headers: bearer(token) }),
+    http<unknown[]>(`${API_PREFIX}/projects`, { headers: bearer(token) }),
   rotateKey: (token: string, projectId: string) =>
-    http<{ key: unknown; visible_key: string }>(`/api/v1/projects/${projectId}/keys/rotate`,
+    http<{ key: unknown; visible_key: string }>(`${API_PREFIX}/projects/${projectId}/keys/rotate`,
       { method: 'POST', headers: bearer(token) }),
 
   /* ── client plane — dual-factor: project id + api key, mismatch → 403 ACCESS_DENIED ── */
   agentProcess: (clientId: string, apiKey: string, body: { user_ref: string; text: string }) =>
-    http<AgentReply>('/api/agent/process', {
+    http<AgentReply>(`${API_PREFIX}/agent/process`, {
       method: 'POST',
       headers: { 'X-Client-Id': clientId, 'X-API-Key': apiKey },
       body: JSON.stringify(body),
@@ -141,7 +147,12 @@ export function connectGateway(
 export const overrides = {
   setApi: (url: string) => { try { localStorage.setItem('hla.api', url); } catch { /* private mode */ } },
   setWs: (url: string) => { try { localStorage.setItem('hla.ws', url); } catch { /* private mode */ } },
+  setPrefix: (prefix: string) => { try { localStorage.setItem('hla.prefix', prefix); } catch { /* private mode */ } },
   clear: () => {
-    try { localStorage.removeItem('hla.api'); localStorage.removeItem('hla.ws'); } catch { /* ignore */ }
+    try {
+      localStorage.removeItem('hla.api');
+      localStorage.removeItem('hla.ws');
+      localStorage.removeItem('hla.prefix');
+    } catch { /* ignore */ }
   },
 };
