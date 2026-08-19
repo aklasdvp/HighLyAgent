@@ -11,7 +11,6 @@ import json
 import logging
 from dataclasses import dataclass
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
