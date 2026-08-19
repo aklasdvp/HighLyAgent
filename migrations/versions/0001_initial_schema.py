@@ -2,8 +2,8 @@
 from __future__ import annotations
 from alembic import op
 from sqlalchemy import text
-from highlyagent.core import Base
-import highlyagent.models  # noqa: F401 - register model metadata
+from core import Base
+import models  # noqa: F401 - register model metadata
 
 revision = "0001_initial_schema"
 down_revision = None

@@ -18,9 +18,9 @@ import jsonschema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from highlyagent.models import Tool
+from models import Tool
 
-log = logging.getLogger("highlyagent.tools")
+log = logging.getLogger("tools")
 
 ClientToolDispatcher = Callable[[str, str, dict], Awaitable[Any]]  # (conn scope, tool, args) -> result
 

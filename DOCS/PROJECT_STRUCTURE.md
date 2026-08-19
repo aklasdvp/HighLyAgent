@@ -1,9 +1,9 @@
 # Project Structure
 
 ```text
-main.py                   # thin executable entry point
-src/highlyagent/          # application package
-  main.py                 # FastAPI application factory/module
+main.py                   # executable entry point
+src/                      # all application modules
+  application.py          # FastAPI application
   core.py                 # settings, database, Redis, auth/RBAC
   routes.py               # REST endpoints
   gateway.py              # WebSocket gateway
@@ -17,4 +17,4 @@ docker/                   # container and database bootstrap assets
 DOCS/                     # setup, deployment, API, and structure guides
 ```
 
-Add new features inside `src/highlyagent`, keep HTTP handlers in `routes.py` or a clearly named future router module, and add matching tests under `tests/`.
+Add new application modules directly under `src/`, with clearly named responsibility and matching tests in `tests/`.

@@ -14,11 +14,11 @@ from dataclasses import dataclass
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from highlyagent.core import get_redis, settings
-from highlyagent.models import KnowledgeEntry
-from highlyagent.providers import factory
+from core import get_redis, settings
+from models import KnowledgeEntry
+from providers import factory
 
-log = logging.getLogger("highlyagent.knowledge")
+log = logging.getLogger("knowledge")
 
 
 @dataclass

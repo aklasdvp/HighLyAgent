@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from highlyagent.core import Base, settings
-import highlyagent.models  # noqa: F401 - register model metadata
+from core import Base, settings
+import models  # noqa: F401 - register model metadata
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

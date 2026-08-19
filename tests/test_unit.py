@@ -14,8 +14,8 @@ os.environ.setdefault("JWT_SECRET_KEY", "unit-test-secret-key")
 
 import pytest
 
-from highlyagent.agent import AgentCore, LimitExceeded
-from highlyagent.core import (
+from agent import AgentCore, LimitExceeded
+from core import (
     ROLE_PERMISSIONS,
     create_token,
     decode_token,
@@ -24,10 +24,10 @@ from highlyagent.core import (
     hash_password,
     verify_password,
 )
-from highlyagent.knowledge import KnowledgeEngine
-from highlyagent.providers import COST_TABLE, _cost, factory
-from highlyagent.runtime import CancelToken, WorkflowEngine
-from highlyagent.tools import ToolValidationError, registry
+from knowledge import KnowledgeEngine
+from providers import COST_TABLE, _cost, factory
+from runtime import CancelToken, WorkflowEngine
+from tools import ToolValidationError, registry
 
 
 # ── auth primitives ──────────────────────────────────────────────────

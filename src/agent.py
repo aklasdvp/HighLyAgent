@@ -20,14 +20,14 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from highlyagent.core import settings
-from highlyagent.knowledge import KnowledgeEngine
-from highlyagent.models import Client, User
-from highlyagent.providers import ProviderResponse, factory
-from highlyagent.runtime import CancelToken, memory
-from highlyagent.tools import registry
+from core import settings
+from knowledge import KnowledgeEngine
+from models import Client, User
+from providers import ProviderResponse, factory
+from runtime import CancelToken, memory
+from tools import registry
 
-log = logging.getLogger("highlyagent.agent")
+log = logging.getLogger("agent")
 
 INTENT_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("weather",   re.compile(r"weather|আবহাওয়া|তাপমাত্রা|বৃষ্টি", re.I)),
@@ -193,7 +193,7 @@ class AgentCore:
 
     async def _record(self, user, conversation_id, text, answer, source, provider,
                       tokens, cost, latency_ms, similarity):
-        from highlyagent.models import Message
+        from models import Message
         await memory.remember(conversation_id, user.id, "user", text)
         await memory.remember(conversation_id, user.id, "assistant", answer)
         user.tokens_today += tokens

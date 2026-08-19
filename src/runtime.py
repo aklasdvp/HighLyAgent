@@ -12,10 +12,10 @@ from celery import Celery
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from highlyagent.core import get_redis, settings
-from highlyagent.models import Conversation, Message, Workflow
+from core import get_redis, settings
+from models import Conversation, Message, Workflow
 
-log = logging.getLogger("highlyagent.runtime")
+log = logging.getLogger("runtime")
 
 celery_app = Celery("highlyagent", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
 celery_app.conf.update(task_serializer="json", result_serializer="json",

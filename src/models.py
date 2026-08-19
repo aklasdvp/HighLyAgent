@@ -9,7 +9,7 @@ from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Enum, Float, Foreign
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from highlyagent.core import Base, settings
+from core import Base, settings
 
 
 def _uuid() -> uuid.UUID:

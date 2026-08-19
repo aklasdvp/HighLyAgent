@@ -14,10 +14,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app import __version__
-from highlyagent.core import init_redis, settings
-from highlyagent.gateway import router as ws_router
-from highlyagent.routes import router as api_router
-from highlyagent.tools import registry
+from core import init_redis, settings
+from gateway import router as ws_router
+from routes import router as api_router
+from tools import registry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,7 +32,7 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[f"{settings.RATE_
 async def lifespan(_: FastAPI):
     await init_redis()
     log.info("redis connected")
-    log.info("provider chain: %s", " → ".join(__import__("highlyagent.providers", fromlist=["factory"]).factory.chain))
+    log.info("provider chain: %s", " → ".join(__import__("providers", fromlist=["factory"]).factory.chain))
     log.info("server tools: %s", ", ".join(sorted(registry._server)))
     yield
     log.info("shutdown complete")
@@ -46,10 +46,10 @@ app = FastAPI(
     docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
 )
 
-highlyagent.state.limiter = limiter
-highlyagent.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+state.limiter = limiter
+add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-highlyagent.add_middleware(
+add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
@@ -57,17 +57,17 @@ highlyagent.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
 
-highlyagent.include_router(api_router)
-highlyagent.include_router(ws_router)
+include_router(api_router)
+include_router(ws_router)
 
 
-@highlyagent.get("/")
+@get("/")
 async def root():
     return {"service": settings.APP_NAME, "version": __version__,
             "gateway": "wss://<host>/ws", "api": settings.API_V1_PREFIX,
             "docs": "/docs" if settings.ENVIRONMENT != "production" else "disabled"}
 
 
-@highlyagent.get("/health")
+@get("/health")
 async def health_ping():
     return {"status": "ok", "version": __version__}
