@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode, CSSProperties } from 'react';
 import {
   LayoutGrid, Layers, KeyRound, BookOpenText, Wrench, PlugZap, TerminalSquare, Users,
@@ -280,6 +280,118 @@ export function EmptyState({ icon, title, desc }: { icon: IconName; title: strin
       </div>
       <p className="font-display font-semibold text-mist-200">{title}</p>
       <p className="text-xs text-mist-500 mt-1 max-w-xs">{desc}</p>
+    </div>
+  );
+}
+
+/* ---------------- live gateway feed (real-time ws simulation) ---------------- */
+export type FeedFrame = { id: number; ts: string; kind: string; text: string };
+
+const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+const CHAT_SAMPLES = [
+  '"ঢাকায় আজ আবহাওয়া কেমন?"', '"What is 128 × 46?"', '"order #8841 status"',
+  '"রিফান্ড পলিসি কী?"', '"convert 250 usd to bdt"', '"সাইন-আপ বাটন কাজ করছে না"',
+  '"refund my last order"', '"show pricing plans"', '"ডিভাইস রিবুট কম্যান্ড পাঠাও"',
+  '"current time in dhaka"', '"track parcel BD-2291"', '"API rate limit কত?"',
+];
+
+const FEED_POOL: { kind: string; weight: number; make: () => string }[] = [
+  { kind: 'msg', weight: 28, make: () => `chat · ${pick(CHAT_SAMPLES)}` },
+  { kind: 'hit', weight: 22, make: () => `KB HIT · sim ${(0.62 + Math.random() * 0.36).toFixed(2)} · 0 tokens` },
+  { kind: 'ai', weight: 13, make: () => { const t = 90 + Math.floor(Math.random() * 340); return `AI ${pick(['openai/gpt-4o-mini', 'claude/claude-haiku-4', 'gemini/gemini-2.0-flash'])} · ${t} tok · $${(t * 0.0000021).toFixed(5)}`; } },
+  { kind: 'tool', weight: 11, make: () => `TOOL ${pick(['weather.fetch', 'math.calculate', 'currency.convert', 'orders.lookup', 'device.reboot'])} · ${40 + Math.floor(Math.random() * 260)}ms` },
+  { kind: 'conn', weight: 9, make: () => `${Math.random() > 0.45 ? '+ CONN' : '− CLOSE'} ${pick(['nova-pos-web', 'nova-pos-mobile', 'shopio-desktop', 'farm-iot-hub', 'medibook-app'])} · ${pick(['api-key', 'jwt'])}` },
+  { kind: 'hb', weight: 13, make: () => `heartbeat · ${118 + Math.floor(Math.random() * 30)} sockets · rtt ${14 + Math.floor(Math.random() * 26)}ms` },
+  { kind: 'err', weight: 2, make: () => pick(['RATE LIMIT 429 · backoff 2s', 'provider timeout · failover → claude', 'schema invalid · tool blocked', 'token quota hit · user u_1947']), },
+];
+
+function weightedFrame(): { kind: string; text: string } {
+  const total = FEED_POOL.reduce((s, p) => s + p.weight, 0);
+  let r = Math.random() * total;
+  for (const p of FEED_POOL) { r -= p.weight; if (r <= 0) return { kind: p.kind, text: p.make() }; }
+  return { kind: 'hb', text: 'heartbeat' };
+}
+
+function seedFrames(): FeedFrame[] {
+  const now = Date.now();
+  return Array.from({ length: 9 }, (_, i) => {
+    const f = weightedFrame();
+    return { id: i, ts: new Date(now - (9 - i) * 1100).toLocaleTimeString('en-GB', { hour12: false }), ...f };
+  }).reverse();
+}
+
+export function useGatewayFeed(active = true) {
+  const [frames, setFrames] = useState<FeedFrame[]>(seedFrames);
+  const [latency, setLatency] = useState<number[]>(() => Array.from({ length: 18 }, () => 18 + Math.random() * 30));
+  const [paused, setPaused] = useState(false);
+  const [stats, setStats] = useState({ connections: 128, msgsPerMin: 342, p50: 24, errRate: 0.2 });
+  const counter = useRef(100);
+
+  useEffect(() => {
+    if (!active || paused) return;
+    const iv = setInterval(() => {
+      counter.current += 1;
+      const f = weightedFrame();
+      const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      setFrames((prev) => [{ id: counter.current, ts, ...f }, ...prev].slice(0, 26));
+      setLatency((prev) => [...prev.slice(1), 16 + Math.random() * 36]);
+      setStats((s) => ({
+        connections: clamp(s.connections + Math.floor(Math.random() * 5) - 2, 112, 154),
+        msgsPerMin: clamp(s.msgsPerMin + Math.floor(Math.random() * 25) - 12, 280, 470),
+        p50: Math.round(clamp(18 + Math.random() * 30, 14, 62)),
+        errRate: Math.max(0, +(s.errRate + (Math.random() * 0.16 - 0.08)).toFixed(2)),
+      }));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [active, paused]);
+
+  return { frames, latency, stats, paused, toggle: () => setPaused((p) => !p) };
+}
+
+const FEED_COLOR: Record<string, string> = {
+  msg: 'text-mist-300', hit: 'text-pulse-300', ai: 'text-signal-300',
+  tool: 'text-cobalt-300', conn: 'text-pulse-400', hb: 'text-mist-600', err: 'text-alarm-400',
+};
+
+export function GatewayFeed({ title = 'Live Gateway Feed', height = 252 }: { title?: string; height?: number }) {
+  const { frames, stats, latency, paused, toggle } = useGatewayFeed();
+  return (
+    <div className="panel overflow-hidden flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-ink-700">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <StatusDot tone="green" pulse />
+          <h3 className="font-display font-semibold text-[14px] text-mist-100 truncate">{title}</h3>
+          <Badge tone="teal">wss</Badge>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="hidden sm:block"><Sparkline data={latency} w={72} h={22} /></div>
+          <IconBtn icon={paused ? 'play' : 'pause'} onClick={toggle} title={paused ? 'Resume stream' : 'Pause stream'} />
+        </div>
+      </div>
+      <div className="grid grid-cols-4 divide-x divide-ink-700 border-b border-ink-700">
+        {[
+          { l: 'Sockets', v: String(stats.connections) },
+          { l: 'Msgs/min', v: String(stats.msgsPerMin) },
+          { l: 'p50', v: `${stats.p50}ms` },
+          { l: 'Err %', v: `${stats.errRate.toFixed(1)}` },
+        ].map((s) => (
+          <div key={s.l} className="px-2 py-2 text-center">
+            <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-mist-600">{s.l}</p>
+            <p className="font-display font-semibold text-[15px] text-mist-100 tabular-nums leading-tight">{s.v}</p>
+          </div>
+        ))}
+      </div>
+      <div className="scanlines feed-scroll overflow-y-auto px-3.5 py-2.5 font-mono text-[11px] leading-[1.95] flex-1" style={{ maxHeight: height }}>
+        {frames.map((f) => (
+          <div key={f.id} className="tick-in flex gap-2.5 whitespace-nowrap">
+            <span className="text-mist-600 shrink-0">{f.ts}</span>
+            <span className={FEED_COLOR[f.kind] ?? 'text-mist-400'}>{f.text}</span>
+          </div>
+        ))}
+        {paused && <div className="text-mist-500 mt-1">— stream paused —</div>}
+      </div>
     </div>
   );
 }

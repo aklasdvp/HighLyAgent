@@ -157,6 +157,8 @@ tr:last-child .td { border-bottom: none; }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 .anim-pop { animation: pop 0.22s cubic-bezier(0.22, 0.9, 0.3, 1) both; }
+.anim-fade { animation: fade 0.35s ease both; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(24px); }
@@ -196,3 +198,65 @@ tr:last-child .td { border-bottom: none; }
 
 @keyframes drawLine { from { stroke-dashoffset: 400; } to { stroke-dashoffset: 0; } }
 .draw-line { stroke-dasharray: 400; animation: drawLine 1.4s cubic-bezier(0.4, 0, 0.2, 1) both; }
+
+/* ── ambient layered background ─────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -60px;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 12% -6%, rgba(35, 191, 165, 0.075), transparent 62%),
+    radial-gradient(820px 480px at 96% 10%, rgba(242, 169, 59, 0.06), transparent 60%),
+    radial-gradient(760px 760px at 52% 112%, rgba(96, 156, 240, 0.055), transparent 62%);
+  animation: ambientDrift 34s ease-in-out infinite alternate;
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(234, 238, 244, 0.055) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent 46%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent 46%);
+}
+@keyframes ambientDrift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-42px, 26px, 0) scale(1.04); }
+}
+
+/* ── feed scanline sweep ────────────────────────────── */
+.scanlines { position: relative; }
+.scanlines::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -60px;
+  height: 60px;
+  background: linear-gradient(to bottom, transparent, rgba(35, 191, 165, 0.07), transparent);
+  animation: scanMove 4.6s linear infinite;
+  pointer-events: none;
+}
+@keyframes scanMove { to { transform: translateY(460px); } }
+
+.tick-in { animation: tickIn 0.35s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+@keyframes tickIn { from { opacity: 0; transform: translateY(-7px); } to { opacity: 1; transform: none; } }
+
+/* ── responsive: tables scroll inside panels on mobile ── */
+@media (max-width: 640px) {
+  .panel { overflow-x: auto; }
+  table { min-width: 680px; }
+  .th, .td { white-space: nowrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
