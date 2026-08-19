@@ -1,5 +1,25 @@
-node_modules/
-.next/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 dist/
 build/
+.DS_Store
+
+# ── workspace-only (editor environment, NOT part of the project) ──
+node_modules/
+package.json
+package-lock.json
+index.html
+vite.config.js
+tsconfig.json
+web/
+.next/
 *.log

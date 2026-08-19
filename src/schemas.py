@@ -74,6 +74,11 @@ class KnowledgeOut(ORM):
     updated_at: datetime
 
 
+class KnowledgeHit(BaseModel):
+    entry: KnowledgeOut
+    similarity: float
+
+
 # ── Tools ───────────────────────────────────────────────
 class ToolCreate(BaseModel):
     name: str = Field(min_length=2, max_length=80, pattern=r"^[a-z][a-z0-9_.]*$")

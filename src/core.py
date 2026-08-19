@@ -23,8 +23,7 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "HighLyAgent"
     ENVIRONMENT: str = "production"
-    # Route prefix is empty: endpoints are served at the root (e.g. /agent/process).
-    # Set a value (e.g. "/api/v1") only if a versioned prefix is ever re-introduced.
+    # Empty by default: endpoints live at the root (/auth/login, /agent/process).
     API_V1_PREFIX: str = ""
     ALLOWED_ORIGINS: list[str] = []
 

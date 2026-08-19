@@ -127,6 +127,23 @@ def test_workflow_engine_runs_steps_in_order():
     assert seen == ["math.calculate", "ai"]
 
 
+def test_workflow_stops_on_cancel_between_steps():
+    wf = SimpleNamespace(steps=[
+        {"kind": "delay", "label": "one"},
+        {"kind": "delay", "label": "two"},
+    ], runs=0)
+    cancel = CancelToken()
+    cancel.cancel()
+
+    async def main():
+        return await WorkflowEngine().run(
+            wf, {}, on_progress=lambda *a: asyncio.sleep(0), cancel=cancel,
+            tool_exec=None, ai_call=None)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main())
+
+
 # ── tool system ──────────────────────────────────────────────────────
 def test_math_tool_executes_safely():
     res = asyncio.run(registry.execute("math.calculate", {"expression": "2+3*4"}))
@@ -207,7 +224,8 @@ def test_plan_tool_time():
 def test_token_limits_enforced():
     agent = AgentCore(db=None, knowledge=None)
     user = SimpleNamespace(blocked=True, plan="free", tokens_today=0, tokens_month=0,
-                           daily_token_limit=100, monthly_token_limit=1000)
+                           daily_token_limit=100, monthly_token_limit=1000,
+                           monthly_limit=1000)
     with pytest.raises(LimitExceeded):                       # blocked account
         agent._enforce_limits(user, estimated=0)
     user.blocked = False

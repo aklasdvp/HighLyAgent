@@ -1,55 +1,70 @@
-# HighLyAgent — Workspace
+# HighLyAgent
 
-HighLyAgent হলো একটি **Universal AI Middleware Platform**। এই workspace-এ দুইটি
-আলাদা অংশ আছে, যাদের প্রতিটি নিজ নিজ GitHub repository-তে থাকে:
+HighLyAgent হলো একটি **FastAPI-based AI middleware platform**। এটি কোনো website, mobile app, desktop app বা IoT client-এর জন্য একটি secure AI backend হিসেবে কাজ করে। Client application সরাসরি AI provider-এর সঙ্গে না কথা বলে HighLyAgent API-তে request পাঠায়; backend authentication, project isolation, knowledge search, AI provider fallback, usage tracking এবং real-time WebSocket communication পরিচালনা করে।
 
-| Folder | Repository | কী | কোথায় চলে |
-|---|---|---|---|
-| `backend/` | Backend repo | FastAPI + PostgreSQL(pgvector) + Redis + Celery | **Server** (VPS/DigitalOcean, Docker) |
-| `frontend/` | Frontend repo | React + Tailwind Admin Dashboard | **Local machine** (PM2 / Electron / systemd) |
+## এটি কী কাজ করে
 
-দুইটি আলাদা repository — কিন্তু একই API contract-এ বাঁধা, তাই একসাথে কাজ করে।
+- Admin dashboard/API থেকে নতুন project তৈরি ও project-specific API key issue করে।
+- Client message গ্রহণ করে এবং প্রতিটি request-এর জন্য **Project ID + API Key** মিলিয়ে access যাচাই করে।
+- আগে project-এর knowledge base-এ semantic search করে; match পেলে cached/learned response দেয়।
+- Knowledge match না পেলে configured AI provider chain (OpenAI, Claude, Gemini, DeepSeek) ব্যবহার করে উত্তর তৈরি করে।
+- Token usage, cost, cache hit ও user quota track করে।
+- WebSocket-এর মাধ্যমে chat progress, answer, cancellation এবং client-tool request real time-এ পাঠায়।
+- PostgreSQL + pgvector-এ durable data/embeddings, Redis-এ short-term cache ও Celery queue ব্যবহার করে।
 
-## Backend (`backend/`)
+## Request flow
 
-GitHub backend repo-র হুবহু mirror — **flat `src/` layout**, root `main.py`,
-root-এ endpoints (কোনো `/api/v1` prefix নেই)।
+```
+Client App
+  → POST /agent/process  অথবা  WebSocket /ws
+  → Project ID + API Key/JWT validation
+  → Redis + pgvector knowledge search
+  → knowledge response অথবা AI provider fallback
+  → usage/audit data save
+  → JSON response বা real-time WebSocket frame
+```
 
-```bash
-cd backend
+## Security model
+
+Client request-এর জন্য `X-Client-Id` এবং `X-API-Key` দুটিই লাগে। API key অবশ্যই ওই Project ID-এর সঙ্গে যুক্ত হতে হবে; mismatch হলে request reject হয়। Admin endpoints JWT bearer token ও role permission দিয়ে সুরক্ষিত।
+
+## Technology
+
+- **API:** FastAPI / Python 3.11
+- **Database:** PostgreSQL 16 + pgvector
+- **Cache & queue:** Redis + Celery
+- **ORM:** SQLAlchemy async
+- **Migration:** Alembic
+- **Deployment:** Docker Compose
+
+## Quick start
+
+```
+python -m venv .venv
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env            # configure করুন
+copy .env.example .env
+# .env-এ database, Redis, JWT secret ও provider key configure করুন
 alembic upgrade head
-python main.py                  # → http://localhost:8000
+python main.py
 ```
 
-বিস্তারিত: [`backend/README.md`](backend/README.md) ও [`backend/DOCS/`](backend/DOCS/)
+API: `http://localhost:8000`
 
-### Client request-এ dual-factor security
+Health check: `http://localhost:8000/health`
 
-```
-POST /agent/process
-X-Client-Id: <project-id>      ← দুটোই লাগবে
-X-API-Key:   hl_live_...       ← mismatch হলে 403 ACCESS_DENIED
-```
+Development API docs: `http://localhost:8000/docs`
 
-## Frontend (`frontend/`)
+## Documentation
 
-Admin Dashboard — শুধু আপনার লোকাল মেশিনে চলে, কখনো public deploy হয় না।
-এটি আলাদা repo হিসেবে push করতে `frontend/README.md` দেখুন।
+- [Local setup](DOCS/LOCAL_SETUP.md)
+- [Database setup](DOCS/DATABASE_SETUP.md)
+- [Docker setup](DOCS/DOCKER_SETUP.md)
+- [Deployment guide](DOCS/DEPLOYMENT_GUIDE.md)
+- [API reference](DOCS/API_REFERENCE.md)
+- [Project structure](DOCS/PROJECT_STRUCTURE.md)
 
-```bash
-cd frontend
-npm install
-npm run build && npm run serve  # → http://127.0.0.1:8090
-```
+## Project layout
 
-Backend-এর সাথে সংযোগ `.env`-এ (`VITE_API_URL`, `VITE_WS_URL`)।
-
-## গুরুত্বপূর্ণ নোট
-
-- এই workspace-এর root-এ React source (`src/`, `package.json`, `vite.config.js`)
-  আছে শুধুমাত্র একটি **live demo build** serve করার জন্য। Frontend-এর canonical
-  home হলো আলাদা `frontend/` repository।
-- Backend-এর canonical home হলো আপনার GitHub backend repo; `backend/` folder
-  সেটির mirror।
+All application modules are directly inside `src/`; root `main.py` is the executable entry point. See [PROJECT_STRUCTURE.md](DOCS/PROJECT_STRUCTURE.md) for the full layout.
