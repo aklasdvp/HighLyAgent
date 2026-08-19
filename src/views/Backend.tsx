@@ -5,30 +5,30 @@ import { useToast } from '../components/toast';
 import { Badge, Btn, CopyBtn, GatewayFeed, Icon, SectionHead, Sparkline, StatusDot } from '../components/ui';
 import type { IconName } from '../components/ui';
 
-import mainPy from '../../backend/app/main.py?raw';
-import gatewayPy from '../../backend/app/gateway.py?raw';
-import agentPy from '../../backend/app/agent.py?raw';
-import providersPy from '../../backend/app/providers.py?raw';
-import knowledgePy from '../../backend/app/knowledge.py?raw';
-import corePy from '../../backend/app/core.py?raw';
-import composeYml from '../../docker-compose.yml?raw';
-import k8sYaml from '../../deploy/k8s.yaml?raw';
-import dockerfileRaw from '../../backend/Dockerfile?raw';
-import ciYml from '../../.github/workflows/ci-cd.yml?raw';
+import mainPy from '../../backend/main.py?raw';
+import applicationPy from '../../backend/src/application.py?raw';
+import gatewayPy from '../../backend/src/gateway.py?raw';
+import agentPy from '../../backend/src/agent.py?raw';
+import providersPy from '../../backend/src/providers.py?raw';
+import knowledgePy from '../../backend/src/knowledge.py?raw';
+import corePy from '../../backend/src/core.py?raw';
+import composeYml from '../../backend/docker-compose.yml?raw';
+import dockerfileRaw from '../../backend/docker/Dockerfile?raw';
+import ciYml from '../../backend/.github/workflows/ci-cd.yml?raw';
 import reqsTxt from '../../backend/requirements.txt?raw';
 
 /* ── source files registry (reads the real repo files) ── */
 const FILES: { path: string; lang: 'python' | 'yaml' | 'docker' | 'text'; desc: string; code: string }[] = [
-  { path: 'backend/app/main.py', lang: 'python', desc: 'FastAPI entrypoint · CORS · rate limiting · lifespan', code: mainPy },
-  { path: 'backend/app/gateway.py', lang: 'python', desc: 'WebSocket gateway · connection manager · task progress & cancellation', code: gatewayPy },
-  { path: 'backend/app/agent.py', lang: 'python', desc: 'Agent core · intent → knowledge → tools → provider → learn', code: agentPy },
-  { path: 'backend/app/knowledge.py', lang: 'python', desc: 'Knowledge engine · pgvector cosine search · Redis cache · knowledge saver', code: knowledgePy },
-  { path: 'backend/app/providers.py', lang: 'python', desc: 'AI provider layer · OpenAI / Gemini / Claude / DeepSeek · manual fallback chain', code: providersPy },
-  { path: 'backend/app/core.py', lang: 'python', desc: 'Config · async DB · JWT + API keys · RBAC', code: corePy },
-  { path: 'backend/Dockerfile', lang: 'docker', desc: 'Non-root image · healthcheck · uvicorn workers', code: dockerfileRaw },
-  { path: 'docker-compose.yml', lang: 'yaml', desc: 'Full stack · pgvector + Redis + API + Celery worker/beat + admin', code: composeYml },
-  { path: 'deploy/k8s.yaml', lang: 'yaml', desc: 'Namespace · Deployment · HPA (3→12) · Ingress + TLS · WS timeouts', code: k8sYaml },
-  { path: '.github/workflows/ci-cd.yml', lang: 'yaml', desc: 'CI/CD · ruff + mypy · pytest ≥90% cov · GHCR push · k8s rollout', code: ciYml },
+  { path: 'backend/main.py', lang: 'python', desc: 'Entry point · adds src/ to sys.path · runs uvicorn', code: mainPy },
+  { path: 'backend/src/application.py', lang: 'python', desc: 'FastAPI app assembly · CORS · rate limiter · routers · /health', code: applicationPy },
+  { path: 'backend/src/gateway.py', lang: 'python', desc: 'WebSocket gateway · connection manager · task progress & cancellation', code: gatewayPy },
+  { path: 'backend/src/agent.py', lang: 'python', desc: 'Agent core · intent → knowledge → tools → provider → learn', code: agentPy },
+  { path: 'backend/src/knowledge.py', lang: 'python', desc: 'Knowledge engine · pgvector cosine search · Redis cache · knowledge saver', code: knowledgePy },
+  { path: 'backend/src/providers.py', lang: 'python', desc: 'AI provider layer · OpenAI / Gemini / Claude / DeepSeek · manual fallback chain', code: providersPy },
+  { path: 'backend/src/core.py', lang: 'python', desc: 'Config · async DB · JWT + API keys · RBAC', code: corePy },
+  { path: 'backend/docker/Dockerfile', lang: 'docker', desc: 'Non-root image · PYTHONPATH=/app/src · healthcheck', code: dockerfileRaw },
+  { path: 'backend/docker-compose.yml', lang: 'yaml', desc: 'Full stack · pgvector + Redis + API + Celery worker/beat · always-on', code: composeYml },
+  { path: 'backend/.github/workflows/ci-cd.yml', lang: 'yaml', desc: 'CI/CD · ruff · pytest · GHCR push · k8s rollout', code: ciYml },
   { path: 'backend/requirements.txt', lang: 'text', desc: 'Pinned dependencies', code: reqsTxt },
 ];
 
@@ -308,10 +308,10 @@ export default function Backend() {
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="font-mono text-[12px] text-mist-200">deploy/k8s.yaml</p>
-                <CopyBtn text={k8sYaml} label="Copy" />
+                <p className="font-mono text-[12px] text-mist-200">backend/docker/Dockerfile</p>
+                <CopyBtn text={dockerfileRaw} label="Copy" />
               </div>
-              <CodePanel code={k8sYaml} lang="yaml" maxHeight={300} />
+              <CodePanel code={dockerfileRaw} lang="docker" maxHeight={300} />
             </div>
           </div>
 

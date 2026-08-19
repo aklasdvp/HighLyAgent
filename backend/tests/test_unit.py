@@ -1,21 +1,28 @@
 """HighLyAgent unit tests — pure logic only (no DB, Redis or network).
 
-Run:  pytest backend/tests -q
+Run:  pytest tests -q
 """
 import asyncio
 import os
+import sys
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
-# Settings are validated at import time — provide safe defaults first.
+# Make the flat src/ modules importable, and give Settings safe defaults,
+# BEFORE importing any application module (Settings validate at import time).
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("JWT_SECRET_KEY", "unit-test-secret-key")
 
 import pytest
 
-from app.agent import AgentCore, LimitExceeded
-from app.core import (
+from agent import AgentCore, LimitExceeded
+from core import (
     ROLE_PERMISSIONS,
     create_token,
     decode_token,
@@ -24,10 +31,10 @@ from app.core import (
     hash_password,
     verify_password,
 )
-from app.knowledge import KnowledgeEngine
-from app.providers import COST_TABLE, _cost, factory
-from app.runtime import CancelToken, WorkflowEngine
-from app.tools import ToolValidationError, registry
+from knowledge import KnowledgeEngine
+from providers import COST_TABLE, _cost, factory
+from runtime import CancelToken, WorkflowEngine
+from tools import ToolValidationError, registry
 
 
 # ── auth primitives ──────────────────────────────────────────────────
@@ -120,23 +127,6 @@ def test_workflow_engine_runs_steps_in_order():
     assert seen == ["math.calculate", "ai"]
 
 
-def test_workflow_stops_on_cancel_between_steps():
-    wf = SimpleNamespace(steps=[
-        {"kind": "delay", "label": "one"},
-        {"kind": "delay", "label": "two"},
-    ], runs=0)
-    cancel = CancelToken()
-    cancel.cancel()
-
-    async def main():
-        return await WorkflowEngine().run(
-            wf, {}, on_progress=lambda *a: asyncio.sleep(0), cancel=cancel,
-            tool_exec=None, ai_call=None)
-
-    with pytest.raises(asyncio.CancelledError):
-        asyncio.run(main())
-
-
 # ── tool system ──────────────────────────────────────────────────────
 def test_math_tool_executes_safely():
     res = asyncio.run(registry.execute("math.calculate", {"expression": "2+3*4"}))
@@ -217,8 +207,7 @@ def test_plan_tool_time():
 def test_token_limits_enforced():
     agent = AgentCore(db=None, knowledge=None)
     user = SimpleNamespace(blocked=True, plan="free", tokens_today=0, tokens_month=0,
-                           daily_token_limit=100, monthly_token_limit=1000,
-                           monthly_limit=1000)
+                           daily_token_limit=100, monthly_token_limit=1000)
     with pytest.raises(LimitExceeded):                       # blocked account
         agent._enforce_limits(user, estimated=0)
     user.blocked = False

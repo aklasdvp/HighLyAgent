@@ -1,0 +1,114 @@
+"""Pydantic schemas — request/response contracts (also used by the Admin UI contract)."""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class ORM(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Clients & keys ──────────────────────────────────────
+class ClientCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    platform: Literal["web", "mobile", "desktop", "iot"] = "web"
+    allowed_origins: list[str] = []
+    rate_limit_per_min: int = Field(default=60, ge=1, le=5000)
+    webhook_url: str | None = None
+
+
+class ClientOut(ORM):
+    id: uuid.UUID
+    name: str
+    platform: str
+    rate_limit_per_min: int
+    suspended: bool
+    created_at: datetime
+
+
+class ApiKeyOut(ORM):
+    id: uuid.UUID
+    label: str
+    last4: str
+    revoked: bool
+    created_at: datetime
+
+
+class ApiKeyIssued(BaseModel):
+    """Visible key is returned exactly once, at creation/rotation time."""
+    key: ApiKeyOut
+    visible_key: str
+
+
+# ── Knowledge ───────────────────────────────────────────
+class KnowledgeCreate(BaseModel):
+    category: str = "general"
+    trigger_text: str = Field(min_length=3)
+    response_text: str = Field(min_length=1)
+    tool_calls: list[dict] = []
+    active: bool = True
+
+    @field_validator("trigger_text", "response_text")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v[:4000]
+
+
+class KnowledgeOut(ORM):
+    id: uuid.UUID
+    client_id: uuid.UUID
+    category: str
+    trigger_text: str
+    response_text: str
+    tool_calls: list[dict]
+    hit_count: int
+    active: bool
+    learned: bool
+    updated_at: datetime
+
+
+# ── Tools ───────────────────────────────────────────────
+class ToolCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80, pattern=r"^[a-z][a-z0-9_.]*$")
+    description: str
+    type: Literal["server", "client"] = "server"
+    schema: dict
+
+
+# ── Chat frames (WebSocket protocol) ────────────────────
+class ChatFrame(BaseModel):
+    type: Literal["chat", "cancel", "tool_result", "pong"]
+    task_id: str | None = None
+    text: str | None = None
+    tool_name: str | None = None
+    tool_payload: Any = None
+
+
+class ProgressFrame(BaseModel):
+    type: Literal["progress"] = "progress"
+    task_id: str
+    stage: str            # auth | intent | vector_search | tool | provider | learn
+    pct: int
+    detail: str | None = None
+
+
+class TokenPair(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class HealthOut(BaseModel):
+    status: Literal["ok", "degraded"]
+    version: str
+    db: bool
+    redis: bool
+    vector: bool
+    providers: dict[str, bool]
