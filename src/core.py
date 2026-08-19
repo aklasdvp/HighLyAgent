@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "HighLyAgent"
     ENVIRONMENT: str = "production"
-    API_V1_PREFIX: str = "/api/v1"
+    API_V1_PREFIX: str = ""
     ALLOWED_ORIGINS: list[str] = []
 
     DATABASE_URL: str

@@ -16,7 +16,7 @@ HighLyAgent হলো একটি **FastAPI-based AI middleware platform**। �
 
 ```text
 Client App
-  → POST /api/v1/agent/process  অথবা  WebSocket /ws
+  → POST /agent/process  অথবা  WebSocket /ws
   → Project ID + API Key/JWT validation
   → Redis + pgvector knowledge search
   → knowledge response অথবা AI provider fallback
