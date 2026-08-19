@@ -1,7 +1,4 @@
-"""HighLyAgent — Universal AI Middleware Platform.
-
-    FastAPI entrypoint: REST (Admin Control Center) + WebSocket (real-time gateway).
-"""
+"""FastAPI application assembly for HighLyAgent."""
 from __future__ import annotations
 
 import logging
@@ -13,23 +10,24 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app import __version__
 from core import init_redis, settings
 from gateway import router as ws_router
 from routes import router as api_router
 from tools import registry
+
+__version__ = "2.4.1"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-7s [%(name)s] %(message)s",
 )
 log = logging.getLogger("highlyagent")
-
 limiter = Limiter(key_func=get_remote_address, default_limits=[f"{settings.RATE_LIMIT_PER_MINUTE}/minute"])
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    """Initialize shared Redis infrastructure for the API lifespan."""
     await init_redis()
     log.info("redis connected")
     log.info("provider chain: %s", " → ".join(__import__("providers", fromlist=["factory"]).factory.chain))
@@ -45,29 +43,32 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
 )
-
-state.limiter = limiter
-add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-add_middleware(
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
+app.include_router(api_router)
+app.include_router(ws_router)
 
-include_router(api_router)
-include_router(ws_router)
 
-
-@get("/")
+@app.get("/")
 async def root():
-    return {"service": settings.APP_NAME, "version": __version__,
-            "gateway": "wss://<host>/ws", "api": settings.API_V1_PREFIX,
-            "docs": "/docs" if settings.ENVIRONMENT != "production" else "disabled"}
+    """Return public service metadata."""
+    return {
+        "service": settings.APP_NAME,
+        "version": __version__,
+        "gateway": "wss://<host>/ws",
+        "api": settings.API_V1_PREFIX,
+        "docs": "/docs" if settings.ENVIRONMENT != "production" else "disabled",
+    }
 
 
-@get("/health")
+@app.get("/health")
 async def health_ping():
+    """Return a lightweight liveness response."""
     return {"status": "ok", "version": __version__}
