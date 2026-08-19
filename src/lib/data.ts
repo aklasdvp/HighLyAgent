@@ -2,6 +2,8 @@
    HighLyAgent — domain types, seed data & pure utilities
    ============================================================ */
 
+import { WS_URL } from './api';
+
 export type ClientType = 'web' | 'mobile' | 'desktop' | 'iot';
 export type Plan = 'free' | 'trial' | 'unlimited';
 export type Intent = 'weather' | 'time' | 'order' | 'sales' | 'refund' | 'generic';
@@ -62,7 +64,7 @@ export interface SystemConfig {
   autoRefreshSession: boolean;
 }
 export const DEFAULT_SYSTEM: SystemConfig = {
-  gatewayUrl: 'wss://api.highlyagent.io/ws',
+  gatewayUrl: WS_URL,
   localPort: 8090,
   sessionTimeoutMin: 30,
   refreshValidDays: 7,
