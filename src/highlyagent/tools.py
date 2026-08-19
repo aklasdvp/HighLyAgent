@@ -18,7 +18,7 @@ import jsonschema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Tool
+from highlyagent.models import Tool
 
 log = logging.getLogger("highlyagent.tools")
 

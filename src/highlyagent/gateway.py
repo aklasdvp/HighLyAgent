@@ -23,12 +23,12 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from app.agent import AgentCore, LimitExceeded
-from app.core import async_session, decode_token, hash_api_key
-from app.knowledge import KnowledgeEngine
-from app.models import ApiKey, Client, Conversation, User
-from app.runtime import CancelToken
-from app.tools import registry
+from highlyagent.agent import AgentCore, LimitExceeded
+from highlyagent.core import async_session, decode_token, hash_api_key
+from highlyagent.knowledge import KnowledgeEngine
+from highlyagent.models import ApiKey, Client, Conversation, User
+from highlyagent.runtime import CancelToken
+from highlyagent.tools import registry
 
 log = logging.getLogger("highlyagent.gateway")
 router = APIRouter()

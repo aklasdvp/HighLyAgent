@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.core import settings
+from highlyagent.core import settings
 
 
 @dataclass

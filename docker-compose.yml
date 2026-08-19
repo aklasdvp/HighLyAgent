@@ -1,6 +1,4 @@
-# HighLyAgent backend stack
-# Copy backend/.env.example to backend/.env, set DB_PASSWORD in your shell/.env,
-# then run: docker compose up -d --build
+# Local and production service topology: PostgreSQL/pgvector, Redis, API, Celery worker, Celery beat.
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -10,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/01-enable-pgvector.sql:ro
+      - ./docker/postgres/01-enable-pgvector.sql:/docker-entrypoint-initdb.d/01-enable-pgvector.sql:ro
     ports: ["5432:5432"]
     restart: unless-stopped
     healthcheck:
@@ -18,7 +16,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -30,10 +27,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
   api:
-    build: ./backend
-    env_file: ./backend/.env
+    build: { context: ., dockerfile: docker/Dockerfile }
+    env_file: .env
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -44,24 +40,21 @@ services:
       interval: 20s
       timeout: 5s
       retries: 3
-
   worker:
-    build: ./backend
-    env_file: ./backend/.env
-    command: celery -A app.runtime.celery_app worker --loglevel=info --concurrency=4
+    build: { context: ., dockerfile: docker/Dockerfile }
+    env_file: .env
+    command: celery -A highlyagent.runtime.celery_app worker --loglevel=info --concurrency=4
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
     restart: unless-stopped
-
   beat:
-    build: ./backend
-    env_file: ./backend/.env
-    command: celery -A app.runtime.celery_app beat --loglevel=info
+    build: { context: ., dockerfile: docker/Dockerfile }
+    env_file: .env
+    command: celery -A highlyagent.runtime.celery_app beat --loglevel=info
     depends_on:
       redis: { condition: service_healthy }
     restart: unless-stopped
-
 volumes:
   pgdata:
   redisdata:

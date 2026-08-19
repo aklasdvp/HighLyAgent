@@ -12,8 +12,8 @@ from celery import Celery
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import get_redis, settings
-from app.models import Conversation, Message, Workflow
+from highlyagent.core import get_redis, settings
+from highlyagent.models import Conversation, Message, Workflow
 
 log = logging.getLogger("highlyagent.runtime")
 

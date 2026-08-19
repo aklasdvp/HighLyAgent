@@ -11,14 +11,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import (
+from highlyagent.core import (
     create_token, decode_token, generate_api_key, get_db, get_redis, hash_api_key,
     hash_password, require, settings, verify_password,
 )
-from app.knowledge import KnowledgeEngine
-from app.models import AdminUser, ApiKey, AuditLog, Client, KnowledgeEntry, SessionRow, Tool, User
-from app.providers import factory
-from app.schemas import (
+from highlyagent.knowledge import KnowledgeEngine
+from highlyagent.models import AdminUser, ApiKey, AuditLog, Client, KnowledgeEntry, SessionRow, Tool, User
+from highlyagent.providers import factory
+from highlyagent.schemas import (
     ApiKeyIssued, ApiKeyOut, ClientCreate, ClientOut, KnowledgeCreate, KnowledgeOut, TokenPair,
 )
 

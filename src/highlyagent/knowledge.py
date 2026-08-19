@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import get_redis, settings
-from app.models import KnowledgeEntry
-from app.providers import factory
+from highlyagent.core import get_redis, settings
+from highlyagent.models import KnowledgeEntry
+from highlyagent.providers import factory
 
 log = logging.getLogger("highlyagent.knowledge")
 

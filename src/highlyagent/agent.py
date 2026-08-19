@@ -20,12 +20,12 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import settings
-from app.knowledge import KnowledgeEngine
-from app.models import Client, User
-from app.providers import ProviderResponse, factory
-from app.runtime import CancelToken, memory
-from app.tools import registry
+from highlyagent.core import settings
+from highlyagent.knowledge import KnowledgeEngine
+from highlyagent.models import Client, User
+from highlyagent.providers import ProviderResponse, factory
+from highlyagent.runtime import CancelToken, memory
+from highlyagent.tools import registry
 
 log = logging.getLogger("highlyagent.agent")
 
@@ -193,7 +193,7 @@ class AgentCore:
 
     async def _record(self, user, conversation_id, text, answer, source, provider,
                       tokens, cost, latency_ms, similarity):
-        from app.models import Message
+        from highlyagent.models import Message
         await memory.remember(conversation_id, user.id, "user", text)
         await memory.remember(conversation_id, user.id, "assistant", answer)
         user.tokens_today += tokens
