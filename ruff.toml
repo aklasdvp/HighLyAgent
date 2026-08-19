@@ -1,6 +1,4 @@
-# HighLyAgent — pinned lint configuration.
-# CI runs `ruff check backend/app`; results are deterministic across ruff versions
-# because the rule set is explicit instead of relying on ruff's defaults.
+# HighLyAgent lint configuration.
 line-length = 110
 target-version = "py311"
 
@@ -8,5 +6,5 @@ target-version = "py311"
 select = ["E4", "E7", "E9", "F"]
 
 [lint.per-file-ignores]
-# tests set env vars before importing app modules (Settings validation at import time)
-"backend/tests/*" = ["E402"]
+# Tests deliberately set required environment variables before package imports.
+"tests/*" = ["E402"]
