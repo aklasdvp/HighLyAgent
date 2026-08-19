@@ -9,7 +9,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/01-enable-pgvector.sql:/docker-entrypoint-initdb.d/01-enable-pgvector.sql:ro
-    ports: ["5432:5432"]
+    ports: ["5433:5432"]
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U highlyagent -d highlyagent"]
@@ -20,7 +20,7 @@ services:
     image: redis:7-alpine
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes: [redisdata:/data]
-    ports: ["6379:6379"]
+    ports: ["6380:6379"]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

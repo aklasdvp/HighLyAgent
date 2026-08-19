@@ -2,16 +2,18 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, List, Union
 
 import redis.asyncio as redis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -19,15 +21,22 @@ from sqlalchemy.orm import DeclarativeBase
 
 # ── Settings ────────────────────────────────────────────
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        env_file_encoding="utf-8", 
+        extra="ignore"
+    )
 
     APP_NAME: str = "HighLyAgent"
     ENVIRONMENT: str = "production"
     API_V1_PREFIX: str = ""
-    ALLOWED_ORIGINS: list[str] = []
+    
+    # 🛠️ Fix: String, Comma-separated or JSON list support
+    ALLOWED_ORIGINS: Union[List[str], str] = ["*"]
+    FALLBACK_CHAIN: Union[List[str], str] = ["openai", "claude", "gemini", "deepseek"]
 
     DATABASE_URL: str
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str = "redis://redis:6379/0"
     KNOWLEDGE_CACHE_TTL: int = 300
     STM_TTL_SECONDS: int = 1800
 
@@ -40,10 +49,27 @@ class Settings(BaseSettings):
     SIMILARITY_THRESHOLD: float = 0.40
     AUTO_LEARN: bool = True
     DEFAULT_PROVIDER: str = "openai"
-    FALLBACK_CHAIN: list[str] = ["openai", "claude", "gemini", "deepseek"]
 
     RATE_LIMIT_PER_MINUTE: int = 60
     MAX_INPUT_LENGTH: int = 4000
+
+    @field_validator("ALLOWED_ORIGINS", "FALLBACK_CHAIN", mode="before")
+    @classmethod
+    def parse_list_fields(cls, v: Any) -> List[str]:
+        """Convert env string/JSON into a Python list safely."""
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        if isinstance(v, list):
+            return v
+        return []
 
 
 @lru_cache
