@@ -63,7 +63,7 @@ async def root():
         "service": settings.APP_NAME,
         "version": __version__,
         "gateway": "wss://<host>/ws",
-        "api": settings.API_V1_PREFIX,
+        "api": settings.API_V1_PREFIX or "/",
         "docs": "/docs" if settings.ENVIRONMENT != "production" else "disabled",
     }
 
