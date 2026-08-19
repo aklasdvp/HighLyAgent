@@ -1,5 +1,6 @@
-# HighLyAgent — full production stack
-#   docker compose up -d --build
+# HighLyAgent backend stack
+# Copy backend/.env.example to backend/.env, set DB_PASSWORD in your shell/.env,
+# then run: docker compose up -d --build
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -9,12 +10,13 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/01-enable-pgvector.sql:ro
     ports: ["5432:5432"]
-    restart: unless-stopped                    # always-on: crash or reboot → auto restart
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U highlyagent"]
+      test: ["CMD-SHELL", "pg_isready -U highlyagent -d highlyagent"]
       interval: 10s
+      timeout: 5s
       retries: 5
 
   redis:
@@ -26,6 +28,7 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
+      timeout: 5s
       retries: 5
 
   api:
@@ -36,9 +39,11 @@ services:
       redis: { condition: service_healthy }
     ports: ["8000:8000"]
     restart: unless-stopped
-    deploy:
-      resources:
-        limits: { cpus: "1.0", memory: 768M }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
 
   worker:
     build: ./backend
@@ -53,16 +58,9 @@ services:
     build: ./backend
     env_file: ./backend/.env
     command: celery -A app.runtime.celery_app beat --loglevel=info
-    depends_on: [redis]
+    depends_on:
+      redis: { condition: service_healthy }
     restart: unless-stopped
-
-  admin:
-    image: nginx:1.27-alpine
-    volumes:
-      - ./dist:/usr/share/nginx/html:ro
-      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    ports: ["8080:80"]
-    depends_on: [api]
 
 volumes:
   pgdata:
