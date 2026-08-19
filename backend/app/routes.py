@@ -216,7 +216,7 @@ async def agent_process(body: ProcessIn, request: Request, db: AsyncSession = De
 
     model_map = {"openai": "gpt-4o-mini", "claude": "claude-haiku-4",
                  "gemini": "gemini-2.0-flash", "deepseek": "deepseek-chat"}
-    out = await factory.generate(
+    out = await factory.complete_with_fallback(
         [{"role": "system", "content": "You are the embedded assistant of " + client.name + "."},
          {"role": "user", "content": body.text}],
         temperature=0.3, max_tokens=400, model_map=model_map)
@@ -224,12 +224,13 @@ async def agent_process(body: ProcessIn, request: Request, db: AsyncSession = De
     if settings.AUTO_LEARN:
         await engine.learn(client.id, body.text, out.text, tool_calls=[])
 
-    user.tokens_today += out.tokens
-    user.tokens_month += out.tokens
+    tokens = out.tokens_in + out.tokens_out
+    user.tokens_today += tokens
+    user.tokens_month += tokens
     user.messages_total += 1
     await db.commit()
     return {"task_id": str(uuid.uuid4()), "text": out.text, "source": "ai", "similarity": hit.similarity,
-            "tools": [], "tokens": out.tokens, "cost_usd": out.cost_usd,
+            "tools": [], "tokens": tokens, "cost_usd": out.cost_usd,
             "latency_ms": int((time.perf_counter() - started) * 1000)}
 
 
@@ -280,4 +281,4 @@ async def system_health(db: AsyncSession = Depends(get_db)):
     return {"status": "ok" if ok_db and ok_redis else "degraded", "version": "2.4.1",
             "db": ok_db, "redis": ok_redis, "vector": ok_db,
             "fallback_chain": factory.chain,
-            "providers": {name: (p.api_key != "") for name, p in factory._providers.items()}}
+            "providers": factory.configured()}

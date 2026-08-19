@@ -8,7 +8,6 @@ Two kinds:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -95,7 +94,8 @@ class ToolRegistry:
                         "code": cur["weather_code"]}
 
         async def calculate(expression: str, **_: Any) -> dict:
-            import ast, operator as op
+            import ast
+            import operator as op
             allowed = {ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv,
                        ast.Pow: op.pow, ast.Mod: op.mod, ast.USub: op.neg}
 

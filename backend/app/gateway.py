@@ -20,7 +20,7 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.agent import AgentCore, LimitExceeded

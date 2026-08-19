@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from app.core import settings
 
@@ -138,16 +139,22 @@ class ProviderFactory:
     def __init__(self, env: dict[str, str] | None = None):
         import os
         env = env or dict(os.environ)
-        self._builders: dict[str, callable] = {
-            "openai": lambda: OpenAIProvider(env.get("OPENAI_API_KEY", "")),
-            "gemini": lambda: GeminiProvider(env.get("GEMINI_API_KEY", "")),
-            "claude": lambda: ClaudeProvider(env.get("ANTHROPIC_API_KEY", "")),
-            "deepseek": lambda: DeepSeekProvider(env.get("DEEPSEEK_API_KEY", "")),
+        self._keys: dict[str, str] = {
+            "openai": env.get("OPENAI_API_KEY", ""),
+            "gemini": env.get("GEMINI_API_KEY", ""),
+            "claude": env.get("ANTHROPIC_API_KEY", ""),
+            "deepseek": env.get("DEEPSEEK_API_KEY", ""),
+        }
+        self._builders: dict[str, Callable[[], AIProvider]] = {
+            "openai": lambda: OpenAIProvider(self._keys["openai"]),
+            "gemini": lambda: GeminiProvider(self._keys["gemini"]),
+            "claude": lambda: ClaudeProvider(self._keys["claude"]),
+            "deepseek": lambda: DeepSeekProvider(self._keys["deepseek"]),
         }
         self._cache: dict[str, AIProvider] = {}
         self.chain: list[str] = [p for p in settings.FALLBACK_CHAIN if p in self._builders]
         self.embedding_provider = env.get("EMBEDDING_PROVIDER", "openai")
-        self.embedding_model = env.get("EMBEDDING_MODEL", settings.DEFAULT_PROVIDER and "text-embedding-3-small")
+        self.embedding_model = env.get("EMBEDDING_MODEL", "text-embedding-3-small")
 
     def get(self, name: str) -> AIProvider:
         if name not in self._cache:
@@ -168,7 +175,11 @@ class ProviderFactory:
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         provider = self.get(self.embedding_provider if self.embedding_provider in self._builders else "openai")
-        return await provider.embed(texts, model="text-embedding-3-small")
+        return await provider.embed(texts, model=self.embedding_model)
+
+    def configured(self) -> dict[str, bool]:
+        """Which providers currently have an API key (used by /system/health)."""
+        return {name: bool(key) for name, key in self._keys.items()}
 
 
 factory = ProviderFactory()
