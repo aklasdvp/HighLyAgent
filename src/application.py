@@ -50,8 +50,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
+    # Manager uses PATCH for project updates and browsers preflight all custom
+    # headers. Keep this explicit so the CORS contract remains predictable.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Client-Id"],
 )
 app.include_router(api_router)
 app.include_router(ws_router)
