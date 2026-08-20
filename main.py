@@ -1,6 +1,6 @@
 """Application entry point for HighLyAgent.
 
-All application modules live directly in src/. Run locally with: python main.py
+All application modules live directly in src/. Run locally with: python3 main.py
 """
 from __future__ import annotations
 
