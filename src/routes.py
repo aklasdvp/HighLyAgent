@@ -7,19 +7,22 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+import jsonschema
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api_key_manager import authenticate_project_key, require_management
 from core import (
     create_token, decode_token, generate_api_key, get_db, get_redis, hash_api_key,
-    hash_password, require, settings, verify_password,
+    hash_password, settings, verify_password,
 )
 from knowledge import KnowledgeEngine
 from models import AdminUser, ApiKey, AuditLog, Client, KnowledgeEntry, SessionRow, Tool, User
 from providers import factory
 from schemas import (
     ApiKeyIssued, ApiKeyOut, ClientCreate, ClientOut, KnowledgeCreate, KnowledgeOut, TokenPair,
+    ToolCreate,
 )
 
 router = APIRouter(prefix=settings.API_V1_PREFIX, tags=["admin"])
@@ -94,18 +97,18 @@ async def auth_refresh(body: RefreshIn, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/auth/me")
-async def auth_me(who: dict = Depends(require())):
+async def auth_me(who: dict = Depends(require_management())):
     return {"sub": who["sub"], "role": who["role"]}
 
 
 # ════════════════ Admin plane — projects & keys ════════════════
 @router.get("/projects", response_model=list[ClientOut])
-async def list_projects(_: dict = Depends(require("clients.read")), db: AsyncSession = Depends(get_db)):
+async def list_projects(_: dict = Depends(require_management("clients.read")), db: AsyncSession = Depends(get_db)):
     return (await db.execute(select(Client).order_by(Client.created_at.desc()))).scalars().all()
 
 
 @router.post("/projects", status_code=201)
-async def create_project(body: ClientCreate, who: dict = Depends(require("clients.write")),
+async def create_project(body: ClientCreate, who: dict = Depends(require_management("clients.write")),
                          db: AsyncSession = Depends(get_db)):
     client = Client(**body.model_dump())
     db.add(client)
@@ -120,7 +123,7 @@ async def create_project(body: ClientCreate, who: dict = Depends(require("client
 
 
 @router.patch("/projects/{project_id}")
-async def update_project(project_id: uuid.UUID, patch: dict, _: dict = Depends(require("clients.write")),
+async def update_project(project_id: uuid.UUID, patch: dict, _: dict = Depends(require_management("clients.write")),
                          db: AsyncSession = Depends(get_db)):
     client = await db.get(Client, project_id)
     if client is None:
@@ -133,7 +136,7 @@ async def update_project(project_id: uuid.UUID, patch: dict, _: dict = Depends(r
 
 
 @router.delete("/projects/{project_id}", status_code=204)
-async def delete_project(project_id: uuid.UUID, who: dict = Depends(require("clients.delete")),
+async def delete_project(project_id: uuid.UUID, who: dict = Depends(require_management("clients.delete")),
                          db: AsyncSession = Depends(get_db)):
     client = await db.get(Client, project_id)
     if client is None:
@@ -144,7 +147,7 @@ async def delete_project(project_id: uuid.UUID, who: dict = Depends(require("cli
 
 
 @router.post("/projects/{project_id}/keys/rotate")
-async def rotate_key(project_id: uuid.UUID, who: dict = Depends(require("clients.write")),
+async def rotate_key(project_id: uuid.UUID, who: dict = Depends(require_management("clients.write")),
                      db: AsyncSession = Depends(get_db)):
     old = (await db.execute(select(ApiKey).where(
         ApiKey.client_id == project_id, ApiKey.revoked.is_(False)))).scalars().all()
@@ -170,25 +173,8 @@ async def agent_process(body: ProcessIn, request: Request, db: AsyncSession = De
     """Dual-factor access: BOTH X-Client-Id and X-API-Key are required and must match.
     An API key alone is never enough — a mismatched project id is rejected with 403."""
     started = time.perf_counter()
-    client_id_raw = request.headers.get("X-Client-Id")
-    api_key = request.headers.get("X-API-Key")
-    if not client_id_raw or not api_key:
-        raise HTTPException(401, {"code": "INVALID_KEY",
-                                  "message": "Both X-Client-Id and X-API-Key headers are required"})
-
-    key = (await db.execute(select(ApiKey).where(
-        ApiKey.key_hash == hash_api_key(api_key), ApiKey.revoked.is_(False)))).scalar_one_or_none()
-    if key is None:
-        raise HTTPException(401, {"code": "INVALID_KEY", "message": "unknown or revoked API key"})
-    if str(key.client_id) != client_id_raw:
-        _audit(db, client_id_raw, "ACCESS_DENIED", f"key ••••{key.last4} does not belong to project {client_id_raw}")
-        await db.commit()
-        raise HTTPException(403, {"code": "ACCESS_DENIED",
-                                  "message": "API key does not belong to this project (id/key mismatch)"})
-
-    client = await db.get(Client, key.client_id)
-    if client is None or client.suspended:
-        raise HTTPException(403, {"code": "SUSPENDED", "message": "project is suspended"})
+    client, key = await authenticate_project_key(
+        db, request.headers.get("X-Client-Id"), request.headers.get("X-API-Key"))
 
     key.last_used_at = datetime.utcnow()
 
@@ -216,8 +202,11 @@ async def agent_process(body: ProcessIn, request: Request, db: AsyncSession = De
 
     model_map = {"openai": "gpt-4o-mini", "claude": "claude-haiku-4",
                  "gemini": "gemini-2.0-flash", "deepseek": "deepseek-chat"}
+    system_prompt = "You are the embedded assistant of " + client.name + "."
+    if client.behavior_description:
+        system_prompt += " " + client.behavior_description
     out = await factory.complete_with_fallback(
-        [{"role": "system", "content": "You are the embedded assistant of " + client.name + "."},
+        [{"role": "system", "content": system_prompt},
          {"role": "user", "content": body.text}],
         temperature=0.3, max_tokens=400, model_map=model_map)
 
@@ -236,7 +225,7 @@ async def agent_process(body: ProcessIn, request: Request, db: AsyncSession = De
 
 # ════════════════ Admin plane — knowledge / tools / users / health ════════════════
 @router.get("/projects/{project_id}/knowledge", response_model=list[KnowledgeOut])
-async def list_knowledge(project_id: uuid.UUID, _: dict = Depends(require("knowledge.read")),
+async def list_knowledge(project_id: uuid.UUID, _: dict = Depends(require_management("knowledge.read")),
                          db: AsyncSession = Depends(get_db)):
     return (await db.execute(select(KnowledgeEntry).where(
         KnowledgeEntry.client_id == project_id).order_by(KnowledgeEntry.updated_at.desc()))).scalars().all()
@@ -244,21 +233,53 @@ async def list_knowledge(project_id: uuid.UUID, _: dict = Depends(require("knowl
 
 @router.post("/projects/{project_id}/knowledge", status_code=201)
 async def add_knowledge(project_id: uuid.UUID, body: KnowledgeCreate,
-                        _: dict = Depends(require("knowledge.write")), db: AsyncSession = Depends(get_db)):
+                        _: dict = Depends(require_management("knowledge.write")), db: AsyncSession = Depends(get_db)):
     entry = await KnowledgeEngine(db).learn(project_id, body.trigger_text, body.response_text,
                                             body.tool_calls, learned=False)
     return KnowledgeOut.model_validate(entry)
 
 
 @router.get("/tools", response_model=list[dict])
-async def list_tools(_: dict = Depends(require("clients.read")), db: AsyncSession = Depends(get_db)):
+async def list_tools(_: dict = Depends(require_management("clients.read")), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(select(Tool))).scalars().all()
     return [{"id": str(t.id), "name": t.name, "type": t.type, "enabled": t.enabled,
              "description": t.description, "schema": t.schema} for t in rows]
 
 
+@router.post("/tools", status_code=201)
+async def create_tool(body: ToolCreate, who: dict = Depends(require_management("tools.manage")),
+                      db: AsyncSession = Depends(get_db)):
+    """Register a project tool (server or client). Server tools must have an
+    implementation name known to the tool registry (e.g. weather.fetch)."""
+    jsonschema.Draft202012Validator.check_schema(body.schema)
+    tool = Tool(name=body.name, description=body.description, type=body.type, schema=body.schema)
+    db.add(tool)
+    _audit(db, who["sub"], "TOOL_CREATE", body.name)
+    await db.commit()
+    await db.refresh(tool)
+    return {"id": str(tool.id), "name": tool.name, "type": tool.type, "enabled": tool.enabled,
+            "description": tool.description, "schema": tool.schema}
+
+
+@router.patch("/tools/{tool_id}")
+async def update_tool(tool_id: uuid.UUID, patch: dict, who: dict = Depends(require_management("tools.manage")),
+                      db: AsyncSession = Depends(get_db)):
+    """Update a tool (e.g. enable/disable, change schema or description)."""
+    tool = await db.get(Tool, tool_id)
+    if tool is None:
+        raise HTTPException(404, "tool not found")
+    for k, v in patch.items():
+        if hasattr(tool, k) and k != "id":
+            if k == "schema":
+                jsonschema.Draft202012Validator.check_schema(v)
+            setattr(tool, k, v)
+    await db.commit()
+    return {"id": str(tool.id), "name": tool.name, "type": tool.type, "enabled": tool.enabled,
+            "description": tool.description, "schema": tool.schema}
+
+
 @router.get("/projects/{project_id}/users")
-async def list_users(project_id: uuid.UUID, _: dict = Depends(require("clients.read")),
+async def list_users(project_id: uuid.UUID, _: dict = Depends(require_management("clients.read")),
                      db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(select(User).where(User.client_id == project_id))).scalars().all()
     return [{"id": str(u.id), "external_id": u.external_id, "plan": u.plan,

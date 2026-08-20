@@ -174,7 +174,7 @@ async def _run_task(conn_id: str, client_id: uuid.UUID | None, task_id: str, tex
             result = await agent.process_input(
                 client=client, user=user, conversation_id=conv.id, text=text,
                 model_map={"openai": "gpt-4o-mini", "claude": "claude-haiku-4", "gemini": "gemini-2.0-flash", "deepseek": "deepseek-chat"},
-                cancel=cancel, emit=emit,
+                cancel=cancel, emit=emit, behavior=client.behavior_description,
             )
             await manager.send(conn_id, {"type": "answer", "task_id": task_id, "text": result.text, "source": result.source, "tokens": result.tokens, "cost_usd": result.cost_usd, "latency_ms": result.latency_ms, "similarity": result.similarity, "tools": result.tools_used})
     except asyncio.CancelledError:

@@ -11,7 +11,6 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from core import init_redis, settings
-from dashboard import router as dashboard_router
 from gateway import router as ws_router
 from routes import router as api_router
 from tools import registry
@@ -57,7 +56,6 @@ app.add_middleware(
 )
 app.include_router(api_router)
 app.include_router(ws_router)
-app.include_router(dashboard_router)
 
 
 @app.get("/")

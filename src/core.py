@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 60
     MAX_INPUT_LENGTH: int = 4000
 
+    # Management API Key — used by the Admin Dashboard (HighLyAgent Manager) to
+    # call management endpoints. Never hand this to a client project.
+    MANAGEMENT_API_KEY: str = ""
+
     @field_validator("ALLOWED_ORIGINS", "FALLBACK_CHAIN", mode="before")
     @classmethod
     def parse_list_fields(cls, v: Any) -> List[str]:

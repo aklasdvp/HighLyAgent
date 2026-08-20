@@ -15,6 +15,10 @@ class ORM(BaseModel):
 # ── Clients & keys ──────────────────────────────────────
 class ClientCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
+    behavior_description: str | None = Field(
+        default=None, max_length=2000,
+        description="Guides the AI: e.g. 'This project is an e-commerce website; give helpful product responses.'",
+    )
     platform: Literal["web", "mobile", "desktop", "iot"] = "web"
     allowed_origins: list[str] = []
     rate_limit_per_min: int = Field(default=60, ge=1, le=5000)
@@ -24,6 +28,7 @@ class ClientCreate(BaseModel):
 class ClientOut(ORM):
     id: uuid.UUID
     name: str
+    behavior_description: str | None = None
     platform: str
     rate_limit_per_min: int
     suspended: bool

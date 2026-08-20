@@ -68,7 +68,8 @@ class AgentCore:
     # ── use case: process user input ────────────────────
     async def process_input(self, *, client: Client, user: User, conversation_id: uuid.UUID,
                             text: str, model_map: dict[str, str], temperature: float = 0.7,
-                            cancel: CancelToken | None = None, emit=None) -> AgentResult:
+                            cancel: CancelToken | None = None, emit=None,
+                            behavior: str | None = None) -> AgentResult:
         cancel = cancel or CancelToken()
         t0 = time.perf_counter()
 
@@ -127,7 +128,7 @@ class AgentCore:
 
         # 7 — provider call with fallback chain
         await progress("provider", 78, " → ".join(factory.chain))
-        messages = self._build_messages(history, text, tool_outputs)
+        messages = self._build_messages(history, text, tool_outputs, behavior)
         cancel.raise_if()
         resp: ProviderResponse = await factory.complete_with_fallback(
             messages, model_map=model_map, temperature=temperature)
@@ -181,8 +182,12 @@ class AgentCore:
         return None
 
     @staticmethod
-    def _build_messages(history: list[dict], text: str, tool_outputs: list[dict]) -> list[dict]:
-        messages: list[dict] = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+    def _build_messages(history: list[dict], text: str, tool_outputs: list[dict],
+                        behavior: str | None = None) -> list[dict]:
+        system = SYSTEM_INSTRUCTION
+        if behavior:
+            system += "\n\nProject behavior: " + behavior
+        messages: list[dict] = [{"role": "system", "content": system}]
         messages += history[-8:]
         if tool_outputs:
             import json

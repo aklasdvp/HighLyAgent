@@ -58,13 +58,11 @@ Development API docs: `http://localhost:8000/docs`
 
 ## Documentation
 
-- [Local setup](DOCS/LOCAL_SETUP.md)
-- [Database setup](DOCS/DATABASE_SETUP.md)
-- [Docker setup](DOCS/DOCKER_SETUP.md)
-- [Deployment guide](DOCS/DEPLOYMENT_GUIDE.md)
-- [API reference](DOCS/API_REFERENCE.md)
-- [Project structure](DOCS/PROJECT_STRUCTURE.md)
+- [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) — what HighLyAgent is and how it works
+- [MANAGEMENT_API_GUIDE.md](MANAGEMENT_API_GUIDE.md) — management/admin API guide
+- [CLIENT_API_GUIDE.md](CLIENT_API_GUIDE.md) — client-facing API & WebSocket guide
 
 ## Project layout
 
-All application modules are directly inside `src/`; root `main.py` is the executable entry point. See [PROJECT_STRUCTURE.md](DOCS/PROJECT_STRUCTURE.md) for the full layout.
+All application modules are directly inside `src/`; root `main.py` is the
+executable entry point.

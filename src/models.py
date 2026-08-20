@@ -25,6 +25,7 @@ class Client(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    behavior_description: Mapped[str | None] = mapped_column(Text)
     platform: Mapped[str] = mapped_column(Enum("web", "mobile", "desktop", "iot", name="platform"), default="web")
     allowed_origins: Mapped[list] = mapped_column(JSON, default=list)
     rate_limit_per_min: Mapped[int] = mapped_column(Integer, default=60)
