@@ -1,15 +1,15 @@
 # HighLyAgent
 
-HighLyAgent হলো একটি **FastAPI-based AI middleware platform**। এটি কোনো website, mobile app, desktop app বা IoT client-এর জন্য একটি secure AI backend হিসেবে কাজ করে। Client application সরাসরি AI provider-এর সঙ্গে না কথা বলে HighLyAgent API-তে request পাঠায়; backend authentication, project isolation, knowledge search, AI provider fallback, usage tracking এবং real-time WebSocket communication পরিচালনা করে।
+HighLyAgent হলো একটি **FastAPI-based AI middleware platform**। এটি কোনো website, mobile app, desktop app বা IoT client-এর জন্য একটি secure AI backend প্রদান করে।
 
 ## এটি কী কাজ করে
 
 - Admin dashboard/API থেকে নতুন project তৈরি ও project-specific API key issue করে।
-- Client message গ্রহণ করে এবং প্রতিটি request-এর জন্য **Project ID + API Key** মিলিয়ে access যাচাই করে।
-- আগে project-এর knowledge base-এ semantic search করে; match পেলে cached/learned response দেয়।
+- Client message গ্রহণ করে এবং প্রতিটি request-এর জন্য **Project ID + API Key** মিলিয়ে access যাচাই করে।
+- আগে project-এর knowledge base-এ semantic search করে; match পেলে cached/learned response দেয়।
 - Knowledge match না পেলে configured AI provider chain (OpenAI, Claude, Gemini, DeepSeek) ব্যবহার করে উত্তর তৈরি করে।
 - Token usage, cost, cache hit ও user quota track করে।
-- WebSocket-এর মাধ্যমে chat progress, answer, cancellation এবং client-tool request real time-এ পাঠায়।
+- WebSocket-এর মাধ্যমে chat progress, answer, cancellation এবং client-tool request real time-এ পাঠায়।
 - PostgreSQL + pgvector-এ durable data/embeddings, Redis-এ short-term cache ও Celery queue ব্যবহার করে।
 
 ## Request flow
@@ -26,7 +26,7 @@ Client App
 
 ## Security model
 
-Client request-এর জন্য `X-Client-Id` এবং `X-API-Key` দুটিই লাগে। API key অবশ্যই ওই Project ID-এর সঙ্গে যুক্ত হতে হবে; mismatch হলে request reject হয়। Admin endpoints JWT bearer token ও role permission দিয়ে সুরক্ষিত।
+Client request-এর জন্য `X-Client-Id` এবং `X-API-Key` দুটিই লাগে। API key অবশ্যই ওই Project ID-এর সঙ্গে যুক্ত হতে হবে; mismatch হলে request reject হয়। Admin endpoints JWT bearer token ও role permission দিয়ে সুরক্ষিত।
 
 ## Technology
 
@@ -40,14 +40,16 @@ Client request-এর জন্য `X-Client-Id` এবং `X-API-Key` দুট
 ## Quick start
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 # Windows PowerShell
 .\.venv\Scripts\Activate.ps1
+# macOS/Linux
+source .venv/bin/activate
 pip install -r requirements.txt
-copy .env.example .env
+cp .env.example .env
 # .env-এ database, Redis, JWT secret ও provider key configure করুন
 alembic upgrade head
-python main.py
+python3 main.py
 ```
 
 API: `http://localhost:8000`  
