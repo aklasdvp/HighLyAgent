@@ -2,20 +2,26 @@
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from core import init_redis, settings
 from gateway import router as ws_router
+from landing import render as render_landing
 from routes import router as api_router
 from tools import registry
 
 __version__ = "2.4.1"
+
+# Process boot time — the only dynamic value exposed on the public landing page.
+_BOOT_MS = int(time.time() * 1000)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,14 +64,19 @@ app.include_router(api_router)
 app.include_router(ws_router)
 
 @app.get("/")
-async def root():
-    """Return public service metadata."""
+async def root(request: Request):
+    """Public face of the service.
+
+    Browsers receive the crafted landing page; API clients receive a minimal,
+    non-sensitive JSON body. Deliberately reveals no version, internal hosts,
+    gateway paths or docs location.
+    """
+    if "text/html" in request.headers.get("accept", ""):
+        return HTMLResponse(render_landing(_BOOT_MS))
     return {
         "service": settings.APP_NAME,
-        "version": __version__,
-        "gateway": "wss://<host>/ws",
-        "api": settings.API_V1_PREFIX or "/",
-        "docs": "/docs" if settings.ENVIRONMENT != "production" else "disabled",
+        "status": "ok",
+        "about": "Universal AI Middleware — self-learning agent core. Open this URL in a browser for details.",
     }
 
 @app.get("/health")

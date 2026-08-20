@@ -4,6 +4,13 @@ Base: `http://localhost:8000` (or your server) · JSON · UTF-8 (বাংলা
 
 Endpoints are served at the **root** — there is no `/api/v1` prefix.
 
+## Public plane (no auth — safe to expose)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Browsers (`Accept: text/html`) get the public landing page; API clients get minimal JSON. Reveals no version, hosts or internal paths. |
+| GET | `/health` | Liveness probe for ops/monitors (`{"status":"ok"}`). |
+
 ## Auth plane (Admin dashboard — JWT, no API key needed)
 
 | Method | Path | Purpose |
