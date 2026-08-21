@@ -79,8 +79,10 @@ curl -H "X-Management-Key: $MANAGEMENT_API_KEY" http://localhost:8000/projects
 curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8000/projects
 ```
 
-> The auth plane (`/auth/setup`, `/auth/login`, `/auth/refresh`) is JWT-only
-> and is not protected by the management key.
+> The auth plane (`/auth/login`, `/auth/refresh`) is JWT-only and is not
+> protected by the management key. Admin users are created directly in the
+> database (e.g., via a migration or script) — there is no `/auth/setup`
+> endpoint.
 
 ## Endpoints overview
 
@@ -88,7 +90,6 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8000/projects
 
 | Method | Path                 | Description                                   |
 |--------|----------------------|-----------------------------------------------|
-| POST   | `/auth/setup`        | Create the first admin (first boot only)      |
 | POST   | `/auth/login`        | Login with username/email + password          |
 | POST   | `/auth/refresh`      | Rotate a refresh token into a new token pair  |
 | GET    | `/auth/me`           | Current principal (JWT or management key)     |

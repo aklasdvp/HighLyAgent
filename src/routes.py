@@ -7,6 +7,7 @@ list responses carry total/limit/offset/items.
 """
 from __future__ import annotations
 
+import hmac
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -23,15 +24,28 @@ from core import (
     hash_password, settings, verify_password,
 )
 from knowledge import KnowledgeEngine
-from models import (
-    AdminUser, ApiKey, AuditLog, Client, Conversation, KnowledgeEntry, Message, SessionRow, Tool, User,
-)
+from models import ApiKey, AuditLog, Client, Conversation, KnowledgeEntry, Message, Tool, User
 from providers import DEFAULT_MODEL_MAP, factory
 from response import ok, ok_list
 from schemas import (
     ApiKeyOut, ClientCreate, ClientOut, KnowledgeCreate, KnowledgeOut, ProjectLimits,
     TokenPair, ToolCreate,
 )
+
+
+class ProviderConfig(BaseModel):
+    """Provider configuration for management."""
+    name: str
+    configured: bool
+    has_key: bool
+
+
+class ProviderOut(BaseModel):
+    """Provider output schema."""
+    name: str
+    configured: bool
+    has_key: bool
+    default_model: str | None = None
 
 router = APIRouter(prefix=settings.API_V1_PREFIX, tags=["admin"])
 
@@ -40,72 +54,46 @@ def _audit(db: AsyncSession, actor: str, action: str, message: str):
     db.add(AuditLog(level="INFO", source="admin", actor=actor, message=f"{action} — {message}"))
 
 
-# ════════════════ Auth plane (no API key — JWT only) ════════════════
-class SetupIn(BaseModel):
-    username: str = Field(min_length=3, max_length=40, pattern=r"^[a-z0-9_.-]+$")
-    email: str
-    password: str = Field(min_length=8, max_length=128)
-
-
+# ════════════════ Auth plane (JWT only — no setup) ════════════════
 class LoginIn(BaseModel):
-    identifier: str                      # username OR email
+    email: str
     password: str
 
 
-class RefreshIn(BaseModel):
-    refresh_token: str
+async def _verify_management_credentials(email: str, password: str) -> bool:
+    """Verify management credentials against .env variables."""
+    if not settings.MANAGEMENT_EMAIL or not settings.MANAGEMENT_PASSWORD:
+        return False
+    return hmac.compare_digest(email.lower().strip(), settings.MANAGEMENT_EMAIL.lower().strip()) and \
+           verify_password(password, settings.MANAGEMENT_PASSWORD)
 
 
-async def _issue_pair(db: AsyncSession, admin: AdminUser) -> TokenPair:
-    access = create_token(str(admin.id), admin.role, "access")
-    refresh = create_token(str(admin.id), admin.role, "refresh")
-    db.add(SessionRow(admin_id=admin.id, refresh_hash=hash_api_key(refresh)))
-    await db.commit()
+async def _issue_pair_for_management() -> TokenPair:
+    """Issue JWT tokens for management user (credentials from .env)."""
+    access = create_token("management", "admin", "access")
+    refresh = create_token("management", "admin", "refresh")
     return TokenPair(access_token=access, refresh_token=refresh)
 
 
-@router.post("/auth/setup", status_code=201)
-async def auth_setup(body: SetupIn, db: AsyncSession = Depends(get_db)):
-    """First boot only — creates the admin. No auto-configuration ever happens."""
-    existing = (await db.execute(select(AdminUser).limit(1))).scalar_one_or_none()
-    if existing:
-        raise HTTPException(status.HTTP_409_CONFLICT, "admin already exists — use /auth/login")
-    admin = AdminUser(username=body.username, email=body.email,
-                      password_hash=hash_password(body.password), role="admin")
-    db.add(admin)
-    await db.flush()
-    _audit(db, body.username, "ADMIN_SETUP", "initial admin created manually")
-    return ok((await _issue_pair(db, admin)).model_dump(), "admin created")
-
-
 @router.post("/auth/login")
-async def auth_login(body: LoginIn, db: AsyncSession = Depends(get_db)):
-    admin = (await db.execute(select(AdminUser).where(
-        (AdminUser.username == body.identifier) | (AdminUser.email == body.identifier))
-    )).scalar_one_or_none()
-    if admin is None or not verify_password(body.password, admin.password_hash):
+async def auth_login(body: LoginIn):
+    """Login with management credentials from .env."""
+    if not await _verify_management_credentials(body.email, body.password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
-    _audit(db, admin.username, "LOGIN", "JWT pair issued (access 30m / refresh 7d)")
-    return ok((await _issue_pair(db, admin)).model_dump(), "login successful")
+    return ok((await _issue_pair_for_management()).model_dump(), "login successful")
 
 
 @router.post("/auth/refresh")
-async def auth_refresh(body: RefreshIn, db: AsyncSession = Depends(get_db)):
+async def auth_refresh(body: RefreshIn):
+    """Refresh access token using refresh token."""
     payload = decode_token(body.refresh_token, expected_type="refresh")
-    row = (await db.execute(select(SessionRow).where(
-        SessionRow.refresh_hash == hash_api_key(body.refresh_token),
-        SessionRow.revoked_at.is_(None)))).scalar_one_or_none()
-    if row is None or row.expires_at < datetime.utcnow():
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "refresh token revoked or expired")
-    row.revoked_at = datetime.utcnow()                    # rotation — single use
-    admin = await db.get(AdminUser, uuid.UUID(payload["sub"]))
-    if admin is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "admin vanished")
-    return ok((await _issue_pair(db, admin)).model_dump(), "tokens refreshed")
+    # For simple env-based auth, we just re-issue tokens without session tracking
+    return ok((await _issue_pair_for_management()).model_dump(), "tokens refreshed")
 
 
 @router.get("/auth/me")
 async def auth_me(who: dict = Depends(require_management())):
+    """Get current authenticated user info."""
     return ok({"sub": who["sub"], "role": who["role"]}, "identity")
 
 
@@ -574,3 +562,38 @@ async def system_health(db: AsyncSession = Depends(get_db)):
         "fallback_chain": factory.chain,
         "providers": factory.configured(),
     }, "health")
+
+
+# ════════════════ AI Provider Management ════════════════
+@router.get("/providers")
+async def list_providers(_: dict = Depends(require_management("providers.manage"))):
+    """List all configured AI providers with their status."""
+    configured = factory.configured()
+    items = []
+    for name in ["openai", "claude", "gemini", "deepseek"]:
+        items.append({
+            "name": name,
+            "configured": configured.get(name, False),
+            "has_key": bool(factory._keys.get(name)),
+            "default_model": DEFAULT_MODEL_MAP.get(name),
+        })
+    return ok({"providers": items}, "providers listed")
+
+
+class ProviderUpdate(BaseModel):
+    """Provider update schema (for documentation — keys come from .env)."""
+    note: str = "Provider API keys are configured via environment variables only"
+
+
+@router.get("/providers/{provider_name}")
+async def get_provider(provider_name: str, _: dict = Depends(require_management("providers.manage"))):
+    """Get a specific provider's configuration status."""
+    if provider_name not in ["openai", "claude", "gemini", "deepseek"]:
+        raise HTTPException(404, "provider not found")
+    configured = factory.configured()
+    return ok({
+        "name": provider_name,
+        "configured": configured.get(provider_name, False),
+        "has_key": bool(factory._keys.get(provider_name)),
+        "default_model": DEFAULT_MODEL_MAP.get(provider_name),
+    }, "provider details")

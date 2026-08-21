@@ -137,6 +137,11 @@ class TokenPair(BaseModel):
     token_type: str = "bearer"
 
 
+class RefreshIn(BaseModel):
+    """Request schema for token refresh."""
+    refresh_token: str
+
+
 class HealthOut(BaseModel):
     status: Literal["ok", "degraded"]
     version: str
