@@ -1,8 +1,18 @@
-node_modules/
-.next/
-dist/
-build/
-*.log
-.env
-.venv/
+```
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+
+# Coverage
+.coverage
+htmlcov/
+coverage/
+
+# Testing
+.pytest_cache/
+```

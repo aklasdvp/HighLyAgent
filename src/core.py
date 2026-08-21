@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # Management API Key — used by the Admin Dashboard (HighLyAgent Manager) to
     # call management endpoints. Never hand this to a client project.
     MANAGEMENT_API_KEY: str = ""
+    
+    # Simple management authentication via .env (no database users needed)
+    MANAGEMENT_EMAIL: str = ""
+    MANAGEMENT_PASSWORD: str = ""
 
     @field_validator("ALLOWED_ORIGINS", "FALLBACK_CHAIN", mode="before")
     @classmethod
