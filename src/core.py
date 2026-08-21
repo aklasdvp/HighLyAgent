@@ -65,7 +65,19 @@ class Settings(BaseSettings):
     MANAGEMENT_EMAIL: str = ""
     MANAGEMENT_PASSWORD: str = ""
 
+
+    @property
+    def management_password_hash(self) -> str | None:
+        """Return bcrypt hash of MANAGEMENT_PASSWORD if set, else None."""
+        if not self.MANAGEMENT_PASSWORD:
+            return None
+        # Check if already a bcrypt hash (starts with $2b$ or $2a$)
+        if self.MANAGEMENT_PASSWORD.startswith("$2"):
+            return self.MANAGEMENT_PASSWORD
+        # Otherwise hash the plain text password
+        return hash_password(self.MANAGEMENT_PASSWORD)
     @field_validator("ALLOWED_ORIGINS", "FALLBACK_CHAIN", mode="before")
+
     @classmethod
     def parse_list_fields(cls, v: Any) -> List[str]:
         """Convert env string/JSON into a Python list safely."""

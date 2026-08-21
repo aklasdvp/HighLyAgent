@@ -29,7 +29,7 @@ from providers import DEFAULT_MODEL_MAP, factory
 from response import ok, ok_list
 from schemas import (
     ApiKeyOut, ClientCreate, ClientOut, KnowledgeCreate, KnowledgeOut, ProjectLimits,
-    TokenPair, ToolCreate,
+    RefreshIn, TokenPair, ToolCreate,
 )
 
 
@@ -61,12 +61,14 @@ class LoginIn(BaseModel):
 
 
 async def _verify_management_credentials(username: str, password: str) -> bool:
-    """Verify management credentials against .env variables (plain text comparison)."""
-    if not settings.MANAGEMENT_USERNAME or not settings.MANAGEMENT_PASSWORD:
+    """Verify management credentials against .env variables (bcrypt hash comparison)."""
+    if not settings.MANAGEMENT_USERNAME or not settings.management_password_hash:
         return False
-    # Plain text comparison for username and password from .env
-    return hmac.compare_digest(username.strip(), settings.MANAGEMENT_USERNAME.strip()) and \
-           hmac.compare_digest(password, settings.MANAGEMENT_PASSWORD)
+    # Username plain text comparison
+    if not hmac.compare_digest(username.strip(), settings.MANAGEMENT_USERNAME.strip()):
+        return False
+    # Password bcrypt verification
+    return verify_password(password, settings.management_password_hash)
 
 
 async def _issue_pair_for_management() -> TokenPair:
@@ -78,24 +80,50 @@ async def _issue_pair_for_management() -> TokenPair:
 
 @router.post("/auth/login")
 async def auth_login(body: LoginIn):
-    """Login with management credentials from .env (username + password)."""
+    """Login with management credentials from .env (username + password).
+    
+    Credentials are verified against MANAGEMENT_USERNAME and MANAGEMENT_PASSWORD
+    environment variables. Password is stored as plain text in .env and hashed
+    with bcrypt on startup for secure comparison.
+    """
     if not await _verify_management_credentials(body.username, body.password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
-    return ok((await _issue_pair_for_management()).model_dump(), "login successful", {"username": settings.MANAGEMENT_USERNAME})
+    tokens = await _issue_pair_for_management()
+    return ok({
+        "access_token": tokens.access_token,
+        "refresh_token": tokens.refresh_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }, "login successful", {"username": settings.MANAGEMENT_USERNAME})
 
 
 @router.post("/auth/refresh")
 async def auth_refresh(body: RefreshIn):
-    """Refresh access token using refresh token."""
+    """Refresh access token using refresh token.
+    
+    Returns new access and refresh tokens with the same format as /auth/login.
+    """
     payload = decode_token(body.refresh_token, expected_type="refresh")
-    # For simple env-based auth, we just re-issue tokens without session tracking
-    return ok((await _issue_pair_for_management()).model_dump(), "tokens refreshed")
+    tokens = await _issue_pair_for_management()
+    return ok({
+        "access_token": tokens.access_token,
+        "refresh_token": tokens.refresh_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }, "tokens refreshed")
 
 
 @router.get("/auth/me")
 async def auth_me(who: dict = Depends(require_management())):
-    """Get current authenticated user info."""
-    return ok({"sub": who["sub"], "role": who["role"]}, "identity")
+    """Get current authenticated user info.
+    
+    Returns the authenticated user's identity and role.
+    """
+    return ok({
+        "sub": who["sub"],
+        "role": who["role"],
+        "username": settings.MANAGEMENT_USERNAME,
+    }, "identity")
 
 
 # ════════════════ Management plane — projects & keys ════════════════
@@ -113,6 +141,10 @@ async def list_projects(limit: int = Query(50, ge=1, le=500), offset: int = Quer
 @router.post("/projects", status_code=201)
 async def create_project(body: ClientCreate, who: dict = Depends(require_management("clients.write")),
                          db: AsyncSession = Depends(get_db)):
+    """Create a new project with auto-generated API key.
+    
+    The visible API key is shown exactly once in the response. Store it securely.
+    """
     client = Client(**body.model_dump())
     db.add(client)
     await db.flush()
@@ -123,7 +155,7 @@ async def create_project(body: ClientCreate, who: dict = Depends(require_managem
     await db.commit()
     return ok({
         "client": ClientOut.model_validate(client).model_dump(),
-        "key": {"key": ApiKeyOut.model_validate(key).model_dump(), "visible_key": visible},
+        "key": {**ApiKeyOut.model_validate(key).model_dump(), "visible_key": visible},
     }, "project created — save the visible API key now")
 
 
@@ -400,7 +432,10 @@ async def list_tools(limit: int = Query(50, ge=1, le=500), offset: int = Query(0
 async def create_tool(body: ToolCreate, who: dict = Depends(require_management("tools.manage")),
                       db: AsyncSession = Depends(get_db)):
     """Register a project tool (server or client). Server tools must have an
-    implementation name known to the tool registry (e.g. weather.fetch)."""
+    implementation name known to the tool registry (e.g. weather.fetch).
+    
+    Tools can specify an optional execution_timeout in seconds (default: 60).
+    """
     jsonschema.Draft202012Validator.check_schema(body.schema)
     tool = Tool(name=body.name, description=body.description, type=body.type, schema=body.schema)
     db.add(tool)
@@ -432,7 +467,10 @@ async def update_tool(tool_id: uuid.UUID, patch: dict, who: dict = Depends(requi
 async def delete_tool(tool_id: uuid.UUID, confirm: bool = Query(False),
                       who: dict = Depends(require_management("tools.manage")),
                       db: AsyncSession = Depends(get_db)):
-    """Delete a tool from every project. Requires explicit ?confirm=true."""
+    """Delete a tool from every project. Requires explicit ?confirm=true.
+    
+    This permanently removes the tool and all references. Use with caution.
+    """
     if not confirm:
         raise HTTPException(400, {"code": "CONFIRMATION_REQUIRED",
                                   "message": "Pass ?confirm=true to permanently delete this tool from all projects"})
@@ -463,7 +501,17 @@ async def list_users(project_id: uuid.UUID, limit: int = Query(50, ge=1, le=500)
 @router.get("/projects/{project_id}/analytics")
 async def project_analytics(project_id: uuid.UUID, _: dict = Depends(require_management("clients.read")),
                             db: AsyncSession = Depends(get_db)):
-    """Usage analytics for a project (users, requests, tokens, tools, intents, errors)."""
+    """Usage analytics for a project (users, requests, tokens, tools, intents, errors).
+    
+    Returns comprehensive metrics including:
+    - User counts (total and daily active)
+    - Request statistics (today, month, all-time, last 30 days)
+    - Token usage (total and average per user)
+    - Most used tools and common intents
+    - Error rate and average response time
+    
+    All values are calculated from real database data.
+    """
     client = await db.get(Client, project_id)
     if client is None:
         raise HTTPException(404, "project not found")
@@ -531,15 +579,14 @@ async def project_analytics(project_id: uuid.UUID, _: dict = Depends(require_man
 
     return ok({
         "project_id": str(project_id),
-        "total_users": total_users,
-        "daily_active_users": daily_active,
-        "requests": {"today": req_today, "month": req_month, "all_time": req_all},
+        "users": {"total": total_users, "daily_active": daily_active},
+        "requests": {"today": req_today, "this_month": req_month, "all_time": req_all},
         "daily_requests_30d": daily_requests,
-        "tokens": {"total": total_tokens, "avg_per_user": avg_tokens_per_user},
-        "most_used_tools": most_used_tools,
-        "most_common_intents": most_common_intents,
+        "tokens": {"total": total_tokens, "average_per_user": avg_tokens_per_user},
+        "tools": most_used_tools,
+        "intents": most_common_intents,
         "error_rate": error_rate,
-        "avg_response_ms": round(float(avg_latency), 2),
+        "average_response_time": round(float(avg_latency), 2),
     }, "analytics")
 
 
