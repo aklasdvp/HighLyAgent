@@ -65,15 +65,20 @@ class ToolRegistry:
             raise ToolValidationError(f"tool '{name}' args invalid: {exc.message}") from exc
 
     # ── execution ───────────────────────────────────────
-    async def execute(self, name: str, args: dict, *, timeout: float = 10.0,
+    async def execute(self, name: str, args: dict, *, timeout: float = 60.0,
                       dispatch_scope: str | None = None) -> Any:
+        """Execute a tool with configurable timeout (default 60 seconds)."""
         self.validate(name, args)
         if name in self._server:
             return await asyncio.wait_for(self._server[name](**args), timeout=timeout)
         if self._kinds.get(name) == "client":
             if self._dispatcher is None or dispatch_scope is None:
                 raise ToolValidationError(f"client tool '{name}' needs a live WebSocket connection")
-            return await asyncio.wait_for(self._dispatcher(dispatch_scope, name, args), timeout=timeout)
+            try:
+                return await asyncio.wait_for(self._dispatcher(dispatch_scope, name, args), timeout=timeout)
+            except asyncio.TimeoutError:
+                log.warning("client tool '%s' timed out after %.1f seconds", name, timeout)
+                raise ToolValidationError(f"tool '{name}' execution timed out after {timeout:.0f} seconds")
         raise ToolValidationError(f"no executor for tool '{name}'")
 
     # ── built-in server tools ───────────────────────────

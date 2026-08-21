@@ -58,10 +58,26 @@ class Settings(BaseSettings):
     MANAGEMENT_API_KEY: str = ""
     
     # Simple management authentication via .env (no database users needed)
+    # MANAGEMENT_USERNAME: Username for management login (e.g., admin)
+    # MANAGEMENT_EMAIL: Email for management login (e.g., admin@highlyagent.com)  
+    # MANAGEMENT_PASSWORD: Plain text password for management login (stored as plain text in .env)
+    MANAGEMENT_USERNAME: str = "admin"
     MANAGEMENT_EMAIL: str = ""
     MANAGEMENT_PASSWORD: str = ""
 
+
+    @property
+    def management_password_hash(self) -> str | None:
+        """Return bcrypt hash of MANAGEMENT_PASSWORD if set, else None."""
+        if not self.MANAGEMENT_PASSWORD:
+            return None
+        # Check if already a bcrypt hash (starts with $2b$ or $2a$)
+        if self.MANAGEMENT_PASSWORD.startswith("$2"):
+            return self.MANAGEMENT_PASSWORD
+        # Otherwise hash the plain text password
+        return hash_password(self.MANAGEMENT_PASSWORD)
     @field_validator("ALLOWED_ORIGINS", "FALLBACK_CHAIN", mode="before")
+
     @classmethod
     def parse_list_fields(cls, v: Any) -> List[str]:
         """Convert env string/JSON into a Python list safely."""
