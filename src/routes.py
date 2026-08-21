@@ -56,16 +56,17 @@ def _audit(db: AsyncSession, actor: str, action: str, message: str):
 
 # ════════════════ Auth plane (JWT only — no setup) ════════════════
 class LoginIn(BaseModel):
-    email: str
+    username: str
     password: str
 
 
-async def _verify_management_credentials(email: str, password: str) -> bool:
-    """Verify management credentials against .env variables."""
-    if not settings.MANAGEMENT_EMAIL or not settings.MANAGEMENT_PASSWORD:
+async def _verify_management_credentials(username: str, password: str) -> bool:
+    """Verify management credentials against .env variables (plain text comparison)."""
+    if not settings.MANAGEMENT_USERNAME or not settings.MANAGEMENT_PASSWORD:
         return False
-    return hmac.compare_digest(email.lower().strip(), settings.MANAGEMENT_EMAIL.lower().strip()) and \
-           verify_password(password, settings.MANAGEMENT_PASSWORD)
+    # Plain text comparison for username and password from .env
+    return hmac.compare_digest(username.strip(), settings.MANAGEMENT_USERNAME.strip()) and \
+           hmac.compare_digest(password, settings.MANAGEMENT_PASSWORD)
 
 
 async def _issue_pair_for_management() -> TokenPair:
@@ -77,10 +78,10 @@ async def _issue_pair_for_management() -> TokenPair:
 
 @router.post("/auth/login")
 async def auth_login(body: LoginIn):
-    """Login with management credentials from .env."""
-    if not await _verify_management_credentials(body.email, body.password):
+    """Login with management credentials from .env (username + password)."""
+    if not await _verify_management_credentials(body.username, body.password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
-    return ok((await _issue_pair_for_management()).model_dump(), "login successful")
+    return ok((await _issue_pair_for_management()).model_dump(), "login successful", {"username": settings.MANAGEMENT_USERNAME})
 
 
 @router.post("/auth/refresh")

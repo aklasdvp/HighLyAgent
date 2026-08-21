@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     MANAGEMENT_API_KEY: str = ""
     
     # Simple management authentication via .env (no database users needed)
+    # MANAGEMENT_USERNAME: Username for management login (e.g., admin)
+    # MANAGEMENT_EMAIL: Email for management login (e.g., admin@highlyagent.com)  
+    # MANAGEMENT_PASSWORD: Plain text password for management login (stored as plain text in .env)
+    MANAGEMENT_USERNAME: str = "admin"
     MANAGEMENT_EMAIL: str = ""
     MANAGEMENT_PASSWORD: str = ""
 

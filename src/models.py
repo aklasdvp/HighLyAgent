@@ -182,11 +182,15 @@ class AdminUser(Base):
 
 
 class SessionRow(Base):
-    """Refresh-token registry — rotation on every refresh, revocation on logout."""
+    """Refresh-token registry — rotation on every refresh, revocation on logout.
+    
+    Note: This table references admin_users for backward compatibility, but the
+    new env-based auth system does not use sessions. Keep for legacy support only.
+    """
     __tablename__ = "sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    admin_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), index=True)
+    admin_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), index=True, nullable=True)
     refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)         # SHA-256, raw never stored
     expires_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow() + timedelta(days=7))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
