@@ -32,6 +32,14 @@ COST_TABLE: dict[str, tuple[float, float]] = {
     "text-embedding-3-small": (0.02, 0.0),
 }
 
+# Default model per provider (used when a project does not override).
+DEFAULT_MODEL_MAP: dict[str, str] = {
+    "openai": "gpt-4o-mini",
+    "claude": "claude-haiku-4",
+    "gemini": "gemini-2.0-flash",
+    "deepseek": "deepseek-chat",
+}
+
 
 def _cost(model: str, tin: int, tout: int) -> float:
     cin, cout = COST_TABLE.get(model, (1.0, 3.0))
@@ -161,8 +169,19 @@ class ProviderFactory:
             self._cache[name] = self._builders[name]()
         return self._cache[name]
 
-    async def complete_with_fallback(self, messages: list[dict], *, model_map: dict[str, str],
-                                     temperature: float = 0.7, max_tokens: int = 1024) -> ProviderResponse:
+    async def complete_with_fallback(self, messages: list[dict], *, model_map: dict[str, str] | None = None,
+                                     temperature: float = 0.7, max_tokens: int = 1024,
+                                     provider_override: str | None = None,
+                                     model_override: str | None = None) -> ProviderResponse:
+        model_map = model_map or DEFAULT_MODEL_MAP
+        if provider_override and provider_override in self._builders and self._keys.get(provider_override):
+            model = model_override or model_map.get(provider_override,
+                                                    DEFAULT_MODEL_MAP.get(provider_override, "gpt-4o-mini"))
+            try:
+                return await self.get(provider_override).complete(
+                    messages, model=model, temperature=temperature, max_tokens=max_tokens)
+            except Exception as exc:  # project-level provider failed — surface it
+                raise RuntimeError(f"provider {provider_override} failed: {exc}") from exc
         errors: list[str] = []
         for name in self.chain:
             try:
@@ -172,6 +191,16 @@ class ProviderFactory:
             except Exception as exc:  # provider outage / quota — walk the chain
                 errors.append(f"{name}: {exc}")
         raise RuntimeError(f"Provider chain exhausted: {'; '.join(errors)}")
+
+    def project_config(self, provider: str | None, model: str | None) -> tuple[str | None, str | None]:
+        """Return ``(provider_override, model_override)`` honouring project-level selection.
+
+        Falls back to the global chain (``None, None``) when the provider is not
+        configured or unknown.
+        """
+        if provider and provider in self._builders and self._keys.get(provider):
+            return provider, model or DEFAULT_MODEL_MAP.get(provider, "gpt-4o-mini")
+        return None, None
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         provider = self.get(self.embedding_provider if self.embedding_provider in self._builders else "openai")

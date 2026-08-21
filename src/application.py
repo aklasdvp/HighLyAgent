@@ -1,21 +1,25 @@
 """FastAPI application assembly for HighLyAgent."""
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from core import init_redis, settings
 from gateway import router as ws_router
+from response import err
 from routes import router as api_router
 from tools import registry
 
-__version__ = "2.4.1"
+__version__ = "2.5.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,10 +56,33 @@ app.add_middleware(
     # Manager uses PATCH for project updates and browsers preflight all custom
     # headers. Keep this explicit so the CORS contract remains predictable.
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Client-Id"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Client-Id", "X-Management-Key"],
 )
 app.include_router(api_router)
 app.include_router(ws_router)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Request, exc: HTTPException):
+    detail = exc.detail
+    if isinstance(detail, dict):
+        error_code = detail.get("code", "ERROR")
+        message = detail.get("message") or str(detail.get("detail", ""))
+    else:
+        error_code = "ERROR"
+        message = str(detail)
+    return JSONResponse(status_code=exc.status_code, content=err(error_code, message))
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content=err("VALIDATION_ERROR", json.dumps(exc.errors(), default=str)))
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_: Request, exc: Exception):
+    log.exception("unhandled exception: %s", exc)
+    return JSONResponse(status_code=500, content=err("INTERNAL", "internal server error"))
 
 
 @app.get("/")

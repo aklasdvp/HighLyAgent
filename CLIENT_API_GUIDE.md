@@ -64,18 +64,28 @@ Body fields:
 
 ### Response
 
+Responses use the standard envelope: `success` / `data` / `message` /
+`timestamp`. The agent output is inside `data`:
+
 ```json
 {
-  "task_id": "b7f0…",
-  "text": "Standard delivery takes 3-5 business days across Bangladesh.",
-  "source": "knowledge",
-  "similarity": 0.87,
-  "tools": [],
-  "tokens": 0,
-  "cost_usd": 0.0,
-  "latency_ms": 42
+  "success": true,
+  "data": {
+    "task_id": "b7f0…",
+    "text": "Standard delivery takes 3-5 business days across Bangladesh.",
+    "source": "knowledge",
+    "similarity": 0.87,
+    "tools": [],
+    "tokens": 0,
+    "cost_usd": 0.0,
+    "latency_ms": 42
+  },
+  "message": "ok",
+  "timestamp": "2026-08-21T04:31:41+00:00"
 }
 ```
+
+`data` fields:
 
 | Field        | Description                                      |
 |--------------|--------------------------------------------------|
@@ -84,6 +94,22 @@ Body fields:
 | `tools`      | Tool calls replayed with the cached answer       |
 | `tokens`     | Tokens billed to the user quota                  |
 | `cost_usd`   | Estimated provider cost for this request         |
+
+Errors also use the envelope and add `error_code` + `detail`:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "daily request limit reached",
+  "error_code": "LIMIT_EXCEEDED",
+  "detail": "daily request limit reached",
+  "timestamp": "2026-08-21T04:31:41+00:00"
+}
+```
+
+> WebSocket `/ws` frames are **not** wrapped in the envelope — they keep the
+> `{type, task_id, ...}` protocol described below.
 
 ## WebSocket /ws
 
@@ -220,7 +246,7 @@ console.log(data);
 | 401     | `INVALID_KEY`   | Missing header, unknown key, or revoked key      |
 | 403     | `ACCESS_DENIED` | Key does not belong to this project              |
 | 403     | `SUSPENDED`     | Project is suspended by an admin                 |
-| 402     | `LIMIT_EXCEEDED`| User's daily token limit reached                 |
+| 402     | `LIMIT_EXCEEDED`| User reached a project limit (requests or tokens, daily or monthly) |
 | 400     | `BAD_REQUEST`   | WebSocket missing `client_id` with API key       |
 | 4403    | —               | WebSocket close: auth failure / mismatch         |
 | 4400    | —               | WebSocket close: bad request                     |

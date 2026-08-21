@@ -69,7 +69,9 @@ class AgentCore:
     async def process_input(self, *, client: Client, user: User, conversation_id: uuid.UUID,
                             text: str, model_map: dict[str, str], temperature: float = 0.7,
                             cancel: CancelToken | None = None, emit=None,
-                            behavior: str | None = None) -> AgentResult:
+                            behavior: str | None = None,
+                            ai_provider: str | None = None,
+                            ai_model: str | None = None) -> AgentResult:
         cancel = cancel or CancelToken()
         t0 = time.perf_counter()
 
@@ -85,7 +87,7 @@ class AgentCore:
 
         # 2 — subscription / token limits
         await progress("quota", 12, f"plan={user.plan}")
-        self._enforce_limits(user, estimated=0)
+        self._enforce_limits(user, estimated=0, client=client)
 
         # 3 — intent analysis
         intent = self._classify_intent(text)
@@ -107,7 +109,8 @@ class AgentCore:
                 pass
             await progress("respond", 100, f"cache hit · sim {hit.similarity:.2f}")
             await self._record(user, conversation_id, text, answer, "cache", None, 0, 0.0,
-                               int((time.perf_counter() - t0) * 1000), hit.similarity)
+                               int((time.perf_counter() - t0) * 1000), hit.similarity,
+                               tools_used=[], intent=intent)
             return AgentResult(answer, "cache", None, 0, 0.0,
                                int((time.perf_counter() - t0) * 1000), hit.similarity)
 
@@ -130,8 +133,10 @@ class AgentCore:
         await progress("provider", 78, " → ".join(factory.chain))
         messages = self._build_messages(history, text, tool_outputs, behavior)
         cancel.raise_if()
+        provider_override, model_override = factory.project_config(ai_provider, ai_model)
         resp: ProviderResponse = await factory.complete_with_fallback(
-            messages, model_map=model_map, temperature=temperature)
+            messages, model_map=model_map, temperature=temperature,
+            provider_override=provider_override, model_override=model_override)
 
         # 8 — learn (Knowledge Saver) → next similar question is free
         if settings.AUTO_LEARN:
@@ -141,20 +146,31 @@ class AgentCore:
         await progress("respond", 100, f"{resp.provider}/{resp.model}")
         await self._record(user, conversation_id, text, resp.text, "provider", resp.provider,
                            resp.tokens_in + resp.tokens_out, resp.cost_usd,
-                           int((time.perf_counter() - t0) * 1000), hit.similarity)
+                           int((time.perf_counter() - t0) * 1000), hit.similarity,
+                           tools_used=tools_used, intent=intent)
         return AgentResult(resp.text, "provider", resp.provider,
                            resp.tokens_in + resp.tokens_out, resp.cost_usd,
                            int((time.perf_counter() - t0) * 1000), hit.similarity, tools_used)
 
     # ── use case: limits ────────────────────────────────
-    def _enforce_limits(self, user: User, estimated: int):
+    def _enforce_limits(self, user: User, estimated: int, client: Client | None = None):
         if user.blocked:
             raise LimitExceeded("account blocked by admin")
         if user.plan == "unlimited":
             return
-        if user.tokens_today + estimated > user.daily_token_limit:
+        if client is not None:
+            if client.daily_request_limit is not None and user.requests_today >= client.daily_request_limit:
+                raise LimitExceeded("daily request limit exceeded")
+            if client.monthly_request_limit is not None and user.requests_month >= client.monthly_request_limit:
+                raise LimitExceeded("monthly request limit exceeded")
+            daily_tokens = client.daily_token_limit if client.daily_token_limit is not None else user.daily_token_limit
+            monthly_tokens = (client.monthly_token_limit if client.monthly_token_limit is not None
+                              else user.monthly_token_limit)
+        else:
+            daily_tokens, monthly_tokens = user.daily_token_limit, user.monthly_token_limit
+        if user.tokens_today + estimated > daily_tokens:
             raise LimitExceeded("daily token limit exceeded — resets 00:00 UTC")
-        if user.tokens_month + estimated > user.monthly_token_limit:
+        if user.tokens_month + estimated > monthly_tokens:
             raise LimitExceeded("monthly token limit exceeded")
 
     # ── internals ───────────────────────────────────────
@@ -197,17 +213,21 @@ class AgentCore:
         return messages
 
     async def _record(self, user, conversation_id, text, answer, source, provider,
-                      tokens, cost, latency_ms, similarity):
+                      tokens, cost, latency_ms, similarity,
+                      tools_used: list[str] | None = None, intent: str | None = None):
         from models import Message
         await memory.remember(conversation_id, user.id, "user", text)
         await memory.remember(conversation_id, user.id, "assistant", answer)
         user.tokens_today += tokens
         user.tokens_month += tokens
+        user.requests_today += 1
+        user.requests_month += 1
         user.messages_total += 1
         user.cache_hits += 1 if source == "cache" else 0
         self.db.add(Message(conversation_id=conversation_id, role="user", content=text))
         self.db.add(Message(conversation_id=conversation_id, role="assistant", content=answer,
-                            source=source, provider=provider, tokens=tokens, latency_ms=latency_ms))
+                            source=source, provider=provider, tokens=tokens, latency_ms=latency_ms,
+                            tools_used=tools_used or [], intent=intent))
         await self.db.commit()
         log.info("msg source=%s tokens=%d cost=%.6f sim=%.2f user=%s",
                  source, tokens, cost, similarity, user.id)

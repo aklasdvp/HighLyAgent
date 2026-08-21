@@ -175,6 +175,7 @@ async def _run_task(conn_id: str, client_id: uuid.UUID | None, task_id: str, tex
                 client=client, user=user, conversation_id=conv.id, text=text,
                 model_map={"openai": "gpt-4o-mini", "claude": "claude-haiku-4", "gemini": "gemini-2.0-flash", "deepseek": "deepseek-chat"},
                 cancel=cancel, emit=emit, behavior=client.behavior_description,
+                ai_provider=client.ai_provider, ai_model=client.ai_model,
             )
             await manager.send(conn_id, {"type": "answer", "task_id": task_id, "text": result.text, "source": result.source, "tokens": result.tokens, "cost_usd": result.cost_usd, "latency_ms": result.latency_ms, "similarity": result.similarity, "tools": result.tools_used})
     except asyncio.CancelledError:
@@ -183,6 +184,21 @@ async def _run_task(conn_id: str, client_id: uuid.UUID | None, task_id: str, tex
         await manager.send(conn_id, {"type": "error", "task_id": task_id, "code": "LIMIT_EXCEEDED", "message": str(exc)})
     except Exception as exc:
         log.exception("task %s failed", task_id)
+        await _bump_error(client_id)
         await manager.send(conn_id, {"type": "error", "task_id": task_id, "code": "INTERNAL", "message": str(exc)})
     finally:
         manager.tasks.pop(task_id, None)
+
+
+async def _bump_error(client_id: uuid.UUID | None):
+    """Increment the project error ledger after a failed task (best effort)."""
+    if client_id is None:
+        return
+    try:
+        async with async_session() as db:
+            users = (await db.execute(select(User).where(User.client_id == client_id))).scalars().all()
+            for u in users:
+                u.errors_total = (u.errors_total or 0) + 1
+            await db.commit()
+    except Exception:
+        log.exception("failed to record error counter for client=%s", client_id)
